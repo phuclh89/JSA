@@ -2,6 +2,7 @@ import { Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config';
 import oracledb from 'oracledb';
 import { JsonLogger } from '../logging/json-logger.service';
+import { initializeOracleClient, type OracleClientMode } from './oracle-client';
 import type { OracleExecutor, OracleTransactionContext } from './oracle.types';
 
 @Injectable()
@@ -14,6 +15,13 @@ export class OracleService implements OracleExecutor, OnModuleInit, OnApplicatio
   ) {}
 
   async onModuleInit(): Promise<void> {
+    initializeOracleClient(
+      {
+        clientMode: this.config.getOrThrow<OracleClientMode>('oracle.clientMode'),
+        clientLibDir: this.config.get<string>('oracle.clientLibDir'),
+      },
+      (entry) => this.logger.log(entry, OracleService.name),
+    );
     this.pool = await oracledb.createPool({
       user: this.config.getOrThrow<string>('oracle.user'),
       password: this.config.getOrThrow<string>('oracle.password'),
@@ -24,6 +32,7 @@ export class OracleService implements OracleExecutor, OnModuleInit, OnApplicatio
       poolTimeout: this.config.getOrThrow<number>('oracle.poolTimeout'),
       queueTimeout: this.config.getOrThrow<number>('oracle.queueTimeout'),
       stmtCacheSize: this.config.getOrThrow<number>('oracle.stmtCacheSize'),
+      events: this.config.getOrThrow<boolean>('oracle.enableEvents'),
     });
     this.logger.log({ result: 'oracle_pool_opened' }, OracleService.name);
   }
@@ -59,7 +68,18 @@ export class OracleService implements OracleExecutor, OnModuleInit, OnApplicatio
       await connection.commit();
       return result;
     } catch (error) {
-      await connection.rollback();
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        this.logger.error(
+          {
+            result: 'oracle_transaction_rollback_failed',
+            rollbackErrorCode: (rollbackError as { code?: string }).code,
+          },
+          undefined,
+          OracleService.name,
+        );
+      }
       throw error;
     } finally {
       await connection.close();

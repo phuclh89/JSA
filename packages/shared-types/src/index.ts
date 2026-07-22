@@ -1,13 +1,39 @@
 export interface AuthenticatedUser {
   userId: string;
+  enterpriseIdentityKey: string;
   username: string;
-  displayName?: string;
+  displayName: string;
   email?: string;
-  siteId?: string;
-  rigIds: string[];
-  departmentIds: string[];
+  defaultSiteId?: string;
+  defaultRigId?: string;
+  defaultDepartmentId?: string;
   roles: string[];
   permissions: string[];
+  permissionOverrides: PermissionOverride[];
+  dataScopes: DataScope[];
+  authentication: {
+    mode: 'development' | 'oidc';
+    sessionExpiresAt?: string;
+  };
+}
+
+export interface PermissionOverride {
+  permissionCode: string;
+  effect: 'ALLOW' | 'DENY';
+}
+
+export interface DataScope {
+  scopeType: 'SITE' | 'RIG' | 'DEPARTMENT';
+  siteId: string;
+  rigId?: string;
+  departmentId?: string;
+  canView: boolean;
+  canAct: boolean;
+}
+
+export interface SessionState {
+  status: 'authenticated';
+  user: AuthenticatedUser;
 }
 
 export interface DependencyCheck {

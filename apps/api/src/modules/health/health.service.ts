@@ -4,6 +4,7 @@ import type { HealthResponse } from '@jsams/shared-types';
 import { OracleService } from '../../common/oracle/oracle.service';
 import { JsonLogger } from '../../common/logging/json-logger.service';
 import { correlationContext } from '../../common/interceptors/correlation-context';
+import { oracleErrorCode } from '../../common/oracle/oracle-client';
 
 @Injectable()
 export class HealthService {
@@ -26,12 +27,12 @@ export class HealthService {
         oracle: { status: 'up', durationMs: Date.now() - started },
       });
     } catch (error) {
-      const oracleError = error as { errorNum?: number; code?: string; message?: string };
+      const oracleError = error as { message?: string };
       this.logger.error(
         {
           correlationId: correlationContext.getStore()?.correlationId,
           result: 'oracle_readiness_failed',
-          oracleErrorCode: oracleError.errorNum ?? oracleError.code,
+          oracleErrorCode: oracleErrorCode(error),
           message: oracleError.message,
         },
         undefined,

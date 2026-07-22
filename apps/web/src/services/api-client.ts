@@ -13,6 +13,10 @@ export class ApiClientError extends Error {
 }
 
 type TokenProvider = () => string | undefined;
+let accessTokenProvider: TokenProvider = () => undefined;
+export function setAccessTokenProvider(provider: TokenProvider): void {
+  accessTokenProvider = provider;
+}
 
 export class ApiClient {
   constructor(
@@ -25,11 +29,14 @@ export class ApiClient {
     const correlationId = globalThis.crypto?.randomUUID?.() ?? `web-${Date.now()}`;
     const response = await fetch(`${this.baseUrl}${path}`, {
       signal,
+      credentials: 'include',
       headers: {
         Accept: 'application/json',
         'X-Correlation-ID': correlationId,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(import.meta.env.VITE_AUTH_MODE === 'development' ? { 'X-Dev-User': 'admin' } : {}),
+        ...(import.meta.env.VITE_AUTH_MODE === 'development'
+          ? { 'X-Dev-User': import.meta.env.VITE_DEV_USER || 'admin' }
+          : {}),
       },
     });
     if (!response.ok && !acceptedStatuses.includes(response.status)) {
@@ -49,5 +56,5 @@ export class ApiClient {
 
 export const apiClient = new ApiClient(
   import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1',
-  () => sessionStorage.getItem('accessToken') ?? undefined,
+  () => accessTokenProvider(),
 );

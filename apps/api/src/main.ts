@@ -7,8 +7,10 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 import { JsonLogger } from './common/logging/json-logger.service';
 import { ConfigService } from '@nestjs/config';
+import { oracleDiagnosticHint, oracleErrorCode } from './common/oracle/oracle-client';
+import type { INestApplication } from '@nestjs/common';
 
-async function bootstrap(): Promise<void> {
+export async function createApplication(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   const config = app.get(ConfigService);
   const logger = app.get(JsonLogger);
@@ -32,8 +34,29 @@ async function bootstrap(): Promise<void> {
     new DocumentBuilder().setTitle('JSAMS API').setVersion('0.1.0').build(),
   );
   SwaggerModule.setup('docs', app, document);
+  return app;
+}
+
+export async function bootstrap(): Promise<void> {
+  const app = await createApplication();
+  const config = app.get(ConfigService);
+  const logger = app.get(JsonLogger);
   await app.listen(config.getOrThrow<number>('app.port'));
   logger.log({ result: 'started', port: config.getOrThrow<number>('app.port') }, 'Bootstrap');
 }
 
-void bootstrap();
+if (require.main === module) {
+  bootstrap().catch((error: unknown) => {
+    console.error(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        service: 'jsams-api',
+        result: 'startup_failed',
+        oracleErrorCode: oracleErrorCode(error),
+        message: oracleDiagnosticHint(error),
+      }),
+    );
+    process.exitCode = 1;
+  });
+}

@@ -15,9 +15,48 @@ export class UnauthenticatedError extends ApplicationError {
     super('UNAUTHENTICATED', 'Authentication is required', HttpStatus.UNAUTHORIZED);
   }
 }
-export class UnauthorizedError extends ApplicationError {
+export class AccessDeniedError extends ApplicationError {
   constructor() {
-    super('UNAUTHORIZED', 'Permission is required', HttpStatus.FORBIDDEN);
+    super('ACCESS_DENIED', 'Access is denied', HttpStatus.FORBIDDEN);
+  }
+}
+export class UnauthorizedError extends AccessDeniedError {}
+export class ApplicationUserNotRegisteredError extends ApplicationError {
+  constructor() {
+    super(
+      'APPLICATION_USER_NOT_REGISTERED',
+      'Application access is not registered',
+      HttpStatus.FORBIDDEN,
+    );
+  }
+}
+export class ApplicationUserInactiveError extends ApplicationError {
+  constructor() {
+    super('APPLICATION_USER_INACTIVE', 'Application access is inactive', HttpStatus.FORBIDDEN);
+  }
+}
+export class DataScopeDeniedError extends ApplicationError {
+  constructor() {
+    super(
+      'DATA_SCOPE_DENIED',
+      'Access is denied for the requested data scope',
+      HttpStatus.FORBIDDEN,
+    );
+  }
+}
+export class ValidationError extends ApplicationError {
+  constructor(message = 'Request data is invalid', details: unknown[] = []) {
+    super('VALIDATION_ERROR', message, HttpStatus.BAD_REQUEST, details);
+  }
+}
+export class DuplicateConflictError extends ApplicationError {
+  constructor(message = 'A conflicting record already exists') {
+    super('DUPLICATE_CONFLICT', message, HttpStatus.CONFLICT);
+  }
+}
+export class OracleConstraintError extends ApplicationError {
+  constructor(message = 'The operation violates a data constraint') {
+    super('DATA_CONSTRAINT_VIOLATION', message, HttpStatus.CONFLICT);
   }
 }
 export class ResourceNotFoundError extends ApplicationError {

@@ -3,6 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import oracledb from 'oracledb';
+import { prepareDatabaseOracleRuntime } from './oracle-runtime.js';
 
 export interface MigrationFile {
   id: string;
@@ -22,6 +23,7 @@ export interface MigrationRecord {
 const databaseRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export function connectionConfig(): oracledb.ConnectionAttributes {
+  prepareDatabaseOracleRuntime();
   const required = ['ORACLE_USER', 'ORACLE_PASSWORD', 'ORACLE_CONNECT_STRING'] as const;
   const missing = required.filter((key) => !process.env[key]);
   if (missing.length)
@@ -54,10 +56,55 @@ export async function loadSqlFiles(folder: 'migrations' | 'rollback'): Promise<M
 }
 
 export function splitStatements(sql: string): string[] {
-  return sql
-    .split(/^\s*\/\s*$|;/m)
-    .map((statement) => statement.trim())
-    .filter(Boolean);
+  const chunks = sql
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n')
+    .split(/^\s*\/\s*$/m);
+  return chunks.flatMap((chunk) => {
+    const withoutLeadingComments = chunk
+      .replace(/^\s*(?:--[^\n]*\n|\/\*[\s\S]*?\*\/\s*)*/g, '')
+      .trimStart();
+    const isPlSql =
+      /^(?:DECLARE|BEGIN|CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE|PACKAGE|TRIGGER|TYPE))\b/i.test(
+        withoutLeadingComments,
+      );
+    if (isPlSql) return chunk.trim() ? [chunk.trim()] : [];
+    return splitNormalSql(chunk);
+  });
+}
+
+function splitNormalSql(sql: string): string[] {
+  const statements: string[] = [];
+  let current = '';
+  let inString = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  for (let index = 0; index < sql.length; index += 1) {
+    const char = sql[index]!;
+    const next = sql[index + 1];
+    if (inLineComment && char === '\n') inLineComment = false;
+    else if (inBlockComment && char === '*' && next === '/') {
+      current += char + next;
+      index += 1;
+      inBlockComment = false;
+      continue;
+    } else if (!inString && !inBlockComment && char === '-' && next === '-') inLineComment = true;
+    else if (!inString && !inLineComment && char === '/' && next === '*') inBlockComment = true;
+    else if (!inLineComment && !inBlockComment && char === "'") {
+      if (inString && next === "'") {
+        current += char + next;
+        index += 1;
+        continue;
+      }
+      inString = !inString;
+    }
+    if (char === ';' && !inString && !inLineComment && !inBlockComment) {
+      if (current.trim()) statements.push(current.trim());
+      current = '';
+    } else current += char;
+  }
+  if (current.trim()) statements.push(current.trim());
+  return statements;
 }
 
 export async function history(connection: oracledb.Connection): Promise<MigrationRecord[]> {

@@ -9,11 +9,7 @@ import type { Response } from 'express';
 import { ApplicationError } from '../errors/application-errors';
 import { correlationContext } from '../interceptors/correlation-context';
 import { JsonLogger } from '../logging/json-logger.service';
-
-interface OracleLikeError extends Error {
-  errorNum?: number;
-  code?: string;
-}
+import { oracleErrorCode } from '../oracle/oracle-client';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -31,6 +27,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       code = exception.code;
       message = exception.message;
       details = exception.details;
+    } else if (isOracleConstraintError(exception)) {
+      status = HttpStatus.CONFLICT;
+      code = 'DATA_CONSTRAINT_VIOLATION';
+      message = 'The operation violates a data constraint';
     } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const payload = exception.getResponse();
@@ -51,14 +51,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       }
     }
 
-    const oracleError = exception as OracleLikeError;
     this.logger.error(
       {
         correlationId,
         result: 'failure',
         errorCode: code,
-        oracleErrorCode: oracleError.errorNum ?? oracleError.code,
-        message: exception instanceof Error ? exception.message : String(exception),
+        oracleErrorCode: oracleErrorCode(exception),
+        message: code === 'INTERNAL_ERROR' ? 'Unhandled request failure' : message,
       },
       undefined,
       GlobalExceptionFilter.name,
@@ -67,4 +66,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       .status(status)
       .json({ success: false, error: { code, message, details }, correlationId });
   }
+}
+
+function isOracleConstraintError(error: unknown): boolean {
+  return [1, 2290, 2291, 2292].includes((error as { errorNum?: number }).errorNum ?? -1);
 }

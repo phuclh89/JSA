@@ -16,6 +16,16 @@ describe('migration SQL parsing', () => {
   it('ignores blank delimiters', () => {
     expect(splitStatements('SELECT 1 FROM DUAL;\n;')).toEqual(['SELECT 1 FROM DUAL']);
   });
+  it('supports Windows line endings and semicolons inside string values', () => {
+    expect(splitStatements("INSERT INTO X VALUES ('a;b');\r\nSELECT 1 FROM DUAL;")).toEqual([
+      "INSERT INTO X VALUES ('a;b')",
+      'SELECT 1 FROM DUAL',
+    ]);
+  });
+  it('keeps a PL/SQL block intact until a slash delimiter', () => {
+    const block = 'BEGIN\n  NULL;\n  NULL;\nEND;\n/\nSELECT 1 FROM DUAL;';
+    expect(splitStatements(block)).toEqual(['BEGIN\n  NULL;\n  NULL;\nEND;', 'SELECT 1 FROM DUAL']);
+  });
 });
 
 describe('migration runner', () => {

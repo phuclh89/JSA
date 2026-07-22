@@ -11,15 +11,20 @@ const environmentSchema = z
     API_PREFIX: z.string().regex(/^\//).default('/api'),
     API_VERSION: z.string().min(1).default('v1'),
     CORS_ALLOWED_ORIGINS: z.string().min(1).default('http://localhost:5173'),
+    ORACLE_CLIENT_MODE: z.enum(['thin', 'thick']).default('thin'),
     ORACLE_USER: z.string().min(1),
     ORACLE_PASSWORD: z.string().min(1),
     ORACLE_CONNECT_STRING: z.string().min(1),
+    ORACLE_CLIENT_LIB_DIR: z.string().optional(),
     ORACLE_POOL_MIN: z.coerce.number().int().min(0).default(1),
     ORACLE_POOL_MAX: positiveInteger.default(10),
     ORACLE_POOL_INCREMENT: positiveInteger.default(1),
     ORACLE_POOL_TIMEOUT_SECONDS: positiveInteger.default(60),
     ORACLE_QUEUE_TIMEOUT_MS: positiveInteger.default(10000),
     ORACLE_STATEMENT_CACHE_SIZE: z.coerce.number().int().min(0).default(50),
+    ORACLE_CONNECTION_TIMEOUT_MS: positiveInteger.default(10000),
+    ORACLE_ENABLE_EVENTS: booleanString.default('false'),
+    RUN_ORACLE_INTEGRATION_TESTS: booleanString.default('false'),
     AUTH_MODE: z.enum(['development', 'oidc']).default('development'),
     OIDC_ENABLED: booleanString.default('false'),
     OIDC_TENANT_ID: z.string().optional(),
@@ -47,11 +52,25 @@ const environmentSchema = z
         message: 'OIDC tenant, client, and audience are required when OIDC is enabled',
       });
     }
+    if (value.AUTH_MODE === 'oidc' && !value.OIDC_ENABLED) {
+      context.addIssue({
+        code: 'custom',
+        path: ['OIDC_ENABLED'],
+        message: 'must be true when AUTH_MODE=oidc',
+      });
+    }
     if (value.ORACLE_POOL_MIN > value.ORACLE_POOL_MAX) {
       context.addIssue({
         code: 'custom',
         path: ['ORACLE_POOL_MIN'],
         message: 'must not exceed ORACLE_POOL_MAX',
+      });
+    }
+    if (value.ORACLE_CLIENT_MODE === 'thick' && !value.ORACLE_CLIENT_LIB_DIR) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ORACLE_CLIENT_LIB_DIR'],
+        message: 'is required when ORACLE_CLIENT_MODE=thick',
       });
     }
   });

@@ -14,9 +14,16 @@
     "build": "corepack pnpm -r build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:status": "corepack pnpm --dir database status",
-    "db:up": "corepack pnpm --dir database up",
-    "db:down": "corepack pnpm --dir database down"
+    "db:status": "corepack pnpm --dir database run status",
+    "db:up": "corepack pnpm --dir database run up",
+    "db:down": "corepack pnpm --dir database run down",
+    "db:verify": "corepack pnpm --dir database run verify",
+    "db:verify:phase1": "corepack pnpm --dir database run verify:phase1",
+    "db:bootstrap:phase1": "corepack pnpm --dir database run bootstrap:phase1",
+    "oracle:diagnose": "corepack pnpm --filter @jsams/api oracle:diagnose",
+    "oracle:test": "corepack pnpm --filter @jsams/api oracle:test",
+    "oracle:readiness": "corepack pnpm --filter @jsams/api oracle:readiness",
+    "oracle:api-smoke": "corepack pnpm --filter @jsams/api oracle:api-smoke"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

@@ -5,8 +5,8 @@ export function AccessDeniedPage() {
     <Result
       status="403"
       title="Access Denied"
-      subTitle="You do not have permission to view this page."
-      extra={<Link to="/system/health">Return to health check</Link>}
+      subTitle="Your account does not have access to this page. Contact an administrator if you believe this is incorrect."
+      extra={<Link to="/browse">Return to an available page</Link>}
     />
   );
 }
@@ -16,7 +16,7 @@ export function NotFoundPage() {
       status="404"
       title="Page Not Found"
       subTitle="The requested page does not exist."
-      extra={<Link to="/system/health">Return to health check</Link>}
+      extra={<Link to="/browse">Return to Browse</Link>}
     />
   );
 }

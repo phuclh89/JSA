@@ -21,4 +21,22 @@ describe('GlobalExceptionFilter', () => {
       }),
     );
   });
+  it('maps Oracle constraint failures without exposing SQL details', () => {
+    const response = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const logger = { error: jest.fn() };
+    const host = { switchToHttp: () => ({ getResponse: () => response }) };
+    new GlobalExceptionFilter(logger as never).catch(
+      { errorNum: 1, message: 'ORA-00001: unique constraint SECRET_SQL' },
+      host as never,
+    );
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: {
+          code: 'DATA_CONSTRAINT_VIOLATION',
+          message: 'The operation violates a data constraint',
+          details: [],
+        },
+      }),
+    );
+  });
 });

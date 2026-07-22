@@ -10,16 +10,17 @@ export default tseslint.config(
   {
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
-      parserOptions: {
-        projectService: { allowDefaultProject: ['apps/api/test/*.ts'] },
-        tsconfigRootDir: import.meta.dirname,
-      },
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
       globals: { ...globals.node, ...globals.browser },
     },
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-explicit-any': 'off',
     },
+  },
+  {
+    files: ['apps/api/test/**/*.ts', 'apps/api/scripts/**/*.ts'],
+    languageOptions: { parserOptions: { projectService: false } },
   },
   { files: ['**/*.cjs'], languageOptions: { globals: globals.node } },
   prettier,

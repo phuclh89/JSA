@@ -17,4 +17,9 @@ describe('environment validation', () => {
       validateEnvironment({ ...valid, NODE_ENV: 'production', AUTH_MODE: 'development' }),
     ).toThrow('forbidden');
   });
+  it('requires a client directory in Thick mode', () => {
+    expect(() => validateEnvironment({ ...valid, ORACLE_CLIENT_MODE: 'thick' })).toThrow(
+      'ORACLE_CLIENT_LIB_DIR',
+    );
+  });
 });
