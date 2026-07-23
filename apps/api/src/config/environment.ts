@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 const booleanString = z.enum(['true', 'false']).transform((value) => value === 'true');
 const positiveInteger = z.coerce.number().int().positive();
+const optionalNonEmpty = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().min(1).optional(),
+);
 
 const environmentSchema = z
   .object({
@@ -32,6 +36,22 @@ const environmentSchema = z
     OIDC_AUDIENCE: z.string().optional(),
     LOCAL_SITE_CODE: z.string().min(1).default('DEV'),
     LOCAL_SITE_ID: z.string().optional(),
+    JSA_PERMISSION_VIEW: optionalNonEmpty,
+    JSA_PERMISSION_CREATE: optionalNonEmpty,
+    JSA_PERMISSION_EDIT: optionalNonEmpty,
+    JSA_PERMISSION_CANCEL: optionalNonEmpty,
+    JSA_PERMISSION_SUBMIT: optionalNonEmpty,
+    JSA_PERMISSION_APPROVE: optionalNonEmpty,
+    JSA_PERMISSION_RETURN: optionalNonEmpty,
+    JSA_PERMISSION_REJECT: optionalNonEmpty,
+    JSA_PERMISSION_COMMENT: optionalNonEmpty,
+    JSA_PERMISSION_WORKFLOW_VIEW: optionalNonEmpty,
+    JSA_PERMISSION_WORKFLOW_ADMIN: optionalNonEmpty,
+    JSA_NUMBER_TEMPLATE: optionalNonEmpty,
+    JSA_NUMBER_UNIQUENESS_SCOPE: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['GLOBAL', 'SITE']).optional(),
+    ),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   })
   .superRefine((value, context) => {
@@ -73,6 +93,13 @@ const environmentSchema = z
         message: 'is required when ORACLE_CLIENT_MODE=thick',
       });
     }
+    const jsaPermissionValues = [value.JSA_PERMISSION_VIEW,value.JSA_PERMISSION_CREATE,value.JSA_PERMISSION_EDIT,value.JSA_PERMISSION_CANCEL];
+    if (jsaPermissionValues.some(Boolean) && !jsaPermissionValues.every(Boolean)) context.addIssue({ code:'custom', path:['JSA_PERMISSION_VIEW'], message:'all four JSA permission mappings must be configured together' });
+    const workflowPermissionValues=[value.JSA_PERMISSION_SUBMIT,value.JSA_PERMISSION_APPROVE,value.JSA_PERMISSION_RETURN,value.JSA_PERMISSION_REJECT,value.JSA_PERMISSION_COMMENT,value.JSA_PERMISSION_WORKFLOW_VIEW,value.JSA_PERMISSION_WORKFLOW_ADMIN];
+    if(workflowPermissionValues.some(Boolean)&&!workflowPermissionValues.every(Boolean))context.addIssue({code:'custom',path:['JSA_PERMISSION_SUBMIT'],message:'all seven workflow permission mappings must be configured together'});
+    if(value.NODE_ENV==='production'&&!workflowPermissionValues.every(Boolean))context.addIssue({code:'custom',path:['JSA_PERMISSION_SUBMIT'],message:'workflow permission mappings are required in production'});
+    if (Boolean(value.JSA_NUMBER_TEMPLATE) !== Boolean(value.JSA_NUMBER_UNIQUENESS_SCOPE)) context.addIssue({ code:'custom', path:['JSA_NUMBER_TEMPLATE'], message:'JSA numbering template and uniqueness scope must be configured together' });
+    if (value.JSA_NUMBER_TEMPLATE && !value.JSA_NUMBER_TEMPLATE.includes('{sequence}')) context.addIssue({ code:'custom', path:['JSA_NUMBER_TEMPLATE'], message:'must include {sequence}' });
   });
 
 export type Environment = z.infer<typeof environmentSchema>;

@@ -31,4 +31,24 @@ export const navigationItems: NavigationItem[] = [
     area: 'operations',
     icon: <SettingOutlined />,
   },
+  ...(
+    [
+      ['/operations/job-types', 'Job Types'],
+      ['/operations/hazard-prompts', 'Hazard Prompts'],
+      ['/operations/positions', 'Positions'],
+      ['/operations/tool-categories', 'Tool Categories'],
+      ['/operations/tools', 'Tools'],
+      ['/operations/languages', 'Languages'],
+      ['/operations/procedure-references', 'Procedure References'],
+      ['/operations/system-parameters', 'System Parameters'],
+      ['/operations/risk-matrices', 'Risk Matrices'],
+      ['/operations/rig-matrix-assignments', 'Rig Matrix Assignments'],
+    ] as const
+  ).map(([key, label]) => ({
+    key,
+    label,
+    permission: 'SYSTEM_ADMIN',
+    area: 'operations' as const,
+    icon: <SettingOutlined />,
+  })),
 ];

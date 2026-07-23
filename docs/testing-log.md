@@ -1,5 +1,47 @@
 # Testing log
 
+## Phase 4 — 2026-07-23
+
+| Check | Exact command | Result |
+| --- | --- | --- |
+| Type-check | `corepack pnpm typecheck` | PASS; all projects. |
+| Lint | `corepack pnpm lint` | PASS; zero warnings. |
+| Database tests | `corepack pnpm test` | PASS; 23/23 database tests including Phase 4 schema, lifecycle, no seed/`MAX`, rollback, and triggers. |
+| Backend tests | `corepack pnpm --filter @jsams/api test -- --runInBand` | PASS; 55 passed, 3 gated skips. |
+| Full workspace tests | `$env:NODE_OPTIONS='--max-old-space-size=4096'; corepack pnpm test` | PASS; database 23/23, API 55 passed with 3 gated skips, web 12 files/23 tests. Known jsdom pseudo-element diagnostics were non-failing. |
+| Production build | `$env:NODE_OPTIONS='--max-old-space-size=4096'; corepack pnpm build` | PASS; non-failing 1,615.16 kB Vite advisory. |
+| Migration integration | `corepack pnpm --dir database run up` | Oracle exposed the 20-character status limit; 006 was rolled back, corrected to 30, and reapplied. |
+| PL/SQL recovery | guarded exact-object recovery and reapply | Oracle DDL auto-commit exposed a delimiter defect; exact Phase 4 partial objects were recovered, delimiter fixed, triggers applied, and temporary recovery scripts removed. |
+| Final rollback/reapply | confirmed `down`; `up`; `bootstrap:phase4`; `status` | PASS; only 006 rolled back (617 ms), reapplied (341 ms), nine ranges restored, 001–006 APPLIED/checksum valid. |
+| Real Phase 4 behavior | `corepack pnpm --dir database run verify:phase4` | PASS; unique assignee, same-instance Return/Resubmit cycle 2, atomic initial publication, Published mutation blocked; fixture rolled back. |
+| Real schema verification | `corepack pnpm --dir database run verify` | PASS; Phase 4 objects and metadata. |
+| Real API/Oracle smoke | `corepack pnpm oracle:api-smoke` | PASS; routes mapped, health/live/ready 200, 30 readiness calls, safe probe, pool close. Authenticated workflow actions skipped because approved production workflow configuration is absent. |
+| Browser inspection | Browser skill against local application | SKIPPED; browser runtime discovery returned zero available in-app browser backends. Automated UI tests and production build passed. |
+
+No credential, connection target, production permission code, organizational approver, or persistent workflow fixture was recorded.
+
+## Phase 3 — 2026-07-23
+
+| Check | Exact command | Result |
+| --- | --- | --- |
+| Initial migration 005 apply | `corepack pnpm --dir database run up` | PASS; applied on real Oracle in 368 ms after one FK-order defect was found, partial Phase 3 objects were enumerated/removed, and dependency order was corrected. |
+| Type-check | `corepack pnpm -r typecheck` | PASS; all database, shared, API, and web projects. |
+| Automated tests | `corepack pnpm -r test` | PASS; database 19/19, API 50 passed with 3 gated skips, web 19/19. Ant Design/jsdom emitted its known non-failing pseudo-element warning. |
+| Production build | `corepack pnpm -r build` | PASS; all projects. Vite emitted a non-failing 1,555.09 kB chunk warning. |
+| Lint | `corepack pnpm lint` | PASS; zero warnings. |
+| Mixed-code regression | `corepack pnpm --dir database run verify:phase2` | PASS; real Oracle again confirmed 25 cells and configured `5`/`D` → `E`/`EXTREME`, with verifier rollback. |
+| Controlled rollback/reapply | `$env:CONFIRM_DEVELOPMENT_ROLLBACK='YES'; corepack pnpm --dir database run down`; `corepack pnpm --dir database run up`; status | PASS; only 005 rolled back (392 ms), reapplied (348 ms), and migrations 001–005 ended APPLIED/checksum valid. |
+| Phase 3 Oracle behavior | `corepack pnpm --dir database run verify:phase3` | PASS; atomic pointers, logical keys, same-version hierarchy, `5`/`D` snapshots, prohibited residual, and cancel semantics; fixture rolled back. |
+| API route startup | built API `node dist/main.js` | PASS; real Oracle pool opened and every Phase 3 route mapped. Authenticated CRUD smoke could not run because approved Phase 1 Site/User bootstrap and JSA permission/numbering decisions are absent. |
+| Phase 3 sequence bootstrap | `PHASE3_BOOTSTRAP_ACTOR=phase3-bootstrap; pnpm db:bootstrap:phase3` | FAIL-CLOSED as designed: `.env` has no approved `LOCAL_SITE_ID`, so no range rows were invented. |
+| Browser inspection | Browser skill against local preview | SKIPPED; troubleshooting returned zero available in-app browser backends. Automated frontend tests and production build passed. |
+| Single-page JSA worksheet type-check | `corepack pnpm --filter @jsams/web typecheck` | PASS; the one-page editor, configurable 3x3/5x5 Matrix layout, dialogs, tables, and combined save flow compile without TypeScript errors. |
+| Single-page JSA worksheet lint | `corepack pnpm --filter @jsams/web lint` | PASS; zero warnings. |
+| Single-page JSA worksheet tests | `corepack pnpm --filter @jsams/web test` | PASS; 11 files and 20 tests at the full-suite checkpoint. Added coverage proving all JSA sections render together without a tablist. A subsequent targeted run passed 2/2 editor tests, including the P — Probability reference dialog. Existing Ant Design/jsdom pseudo-element diagnostics remained non-failing. |
+| Single-page JSA worksheet build | `corepack pnpm --filter @jsams/web build` | PASS; production assets generated. Vite emitted its existing non-failing large-chunk advisory (1,583.81 kB). |
+
+No credentials, connection string, invented permission code, production numbering format, or persistent test fixture was recorded.
+
 ## Phase 0 — 2026-07-22
 
 | Check                              | Exact command                                                                                                                                                                 | Result                                                                                                                   |
@@ -98,3 +140,25 @@ No password, unmasked target service, raw SQL error, or secret `.env` content wa
 | Frontend visual browser inspection        | In-app browser against the Phase 1 shell                                                                                                      | SKIPPED; no in-app browser backend/session was available. Automated route/menu/session tests and the production build passed.                                                                                                                                                                                          |
 
 No credentials, provider token, personal identity, or unmasked connection target was recorded.
+
+## Phase 2 — 2026-07-22
+
+| Check | Exact command | Result |
+| --- | --- | --- |
+| Type-check | `corepack pnpm typecheck` | PASS; all database, shared, API, and web projects. |
+| Lint | `corepack pnpm lint` | PASS; zero warnings. |
+| Database/static and application tests | `corepack pnpm test` | Initial run: database 16 and API 43 passed (3 gated skips); one new frontend accessible-name assertion failed. The assertion was corrected without changing behavior. |
+| Targeted frontend rerun | `corepack pnpm --filter @jsams/web test -- src/features/administration/master-data-page.spec.tsx` | PASS; 2 tests. jsdom emitted its known non-failing pseudo-element `getComputedStyle` limitation from Ant Design. |
+| Initial database status | `corepack pnpm db:status` | PASS; migrations 001–003 APPLIED/checksum valid and 004 PENDING. |
+| Migration 004 apply | `corepack pnpm db:up` | PASS; 004 applied and prior migrations skipped. |
+| Real schema verification | `corepack pnpm db:verify` | PASS; 15 Phase 2 tables, 15 sequences, migration 004 APPLIED, and expected `NUMBER(19)` primary keys. |
+| Real Phase 2 behavior | `corepack pnpm db:verify:phase2` | PASS; scoped active uniqueness, hierarchy, Tool Category FK, dimension, 25 mixed-code cells, configured `5`/`D` → `E`/`EXTREME` lookup, duplicate-cell rejection, overlap lookup; fixture transaction rolled back. |
+| Controlled rollback attempt | `$env:CONFIRM_DEVELOPMENT_ROLLBACK='YES'; corepack pnpm db:down` | Sandbox child-process `EPERM` before DB execution; no schema change. |
+| Controlled rollback/reapply | Same rollback command with approved execution, then `corepack pnpm db:up` | PASS; only migration 004 rolled back, then reapplied successfully. |
+| Full workspace tests, final attempt | `corepack pnpm test` | Database 16/16 and the then-current API 43 passed with 3 explicitly gated integration skips. All 16 frontend assertions reached before one parallel Vitest worker exhausted memory; this was an execution-resource failure, not an assertion failure. |
+| Final backend tests | `corepack pnpm --filter @jsams/api test` | PASS; 10 suites and 47 tests, with 3 explicitly gated Oracle integration tests skipped. Added assignment data-scope filtering, inactive-parent blocking, Rig-lock-before-overlap ordering, failure audit suppression, and successful required-audit coverage. |
+| Frontend tests with adequate heap | `$env:NODE_OPTIONS='--max-old-space-size=4096'; corepack pnpm --filter @jsams/web test` | PASS outside sandbox after sandbox `spawn EPERM`; 9 files, 17 tests. jsdom emitted its known non-failing pseudo-element `getComputedStyle` limitation from Ant Design. |
+| Production build | `$env:NODE_OPTIONS='--max-old-space-size=4096'; corepack pnpm build` | PASS outside sandbox after sandbox `spawn EPERM`; all workspace packages built. Vite emitted a non-failing 1,484.47 kB chunk-size warning. |
+| Real API/Oracle smoke | `corepack pnpm oracle:api-smoke` | PASS; Master Data and Risk Matrix modules/routes initialized, health/live/ready returned 200, 30 readiness calls passed (4.44 ms average), unregistered user probe returned safe 403, and pool shutdown passed. Authenticated Phase 2 CRUD was not executed because approved Phase 1 bootstrap identity/data are absent. |
+| Phase 2 bootstrap | `corepack pnpm db:bootstrap:phase2` | SKIPPED; Phase 1 production Site/range bootstrap and approved actor values are not available. No production data was invented. |
+| Frontend visual browser inspection | In-app browser against Phase 2 administration routes | SKIPPED; browser runtime reported no available in-app browser session. Automated component/route tests and production build passed. |

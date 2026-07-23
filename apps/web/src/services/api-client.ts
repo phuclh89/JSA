@@ -25,13 +25,30 @@ export class ApiClient {
   ) {}
 
   async get<T>(path: string, signal?: AbortSignal, acceptedStatuses: number[] = []): Promise<T> {
+    return this.request<T>(path, { method: 'GET', signal }, acceptedStatuses);
+  }
+
+  async post<T, B = unknown>(path: string, body: B): Promise<T> {
+    return this.request<T>(path, { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async put<T, B = unknown>(path: string, body: B): Promise<T> {
+    return this.request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
+  }
+
+  private async request<T>(
+    path: string,
+    init: RequestInit,
+    acceptedStatuses: number[] = [],
+  ): Promise<T> {
     const token = this.tokenProvider();
     const correlationId = globalThis.crypto?.randomUUID?.() ?? `web-${Date.now()}`;
     const response = await fetch(`${this.baseUrl}${path}`, {
-      signal,
+      ...init,
       credentials: 'include',
       headers: {
         Accept: 'application/json',
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
         'X-Correlation-ID': correlationId,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(import.meta.env.VITE_AUTH_MODE === 'development'

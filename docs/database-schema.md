@@ -1,6 +1,6 @@
 # Database conventions
 
-Phase 0 creates `JSA_SCHEMA_VERSION`. Phase 1 adds the site, identity, authorization, and data-scope foundation described below; it does not add JSA, workflow, translation, review, or risk-matrix business tables.
+Phase 0 creates `JSA_SCHEMA_VERSION`. Phase 1 adds the site, identity, authorization, and data-scope foundation. Phase 2 adds governed master data and versioned Risk Matrix configuration; it does not add JSA authoring, workflow, translation, review, or reporting tables.
 
 - Tables: `JSA_*` or `SYS_*`; sequences: `SEQ_<ENTITY>`.
 - Constraints: `PK_<TABLE>`, `FK_<CHILD>_<PARENT>`, `UK_<TABLE>_<PURPOSE>`, `CHK_<TABLE>_<PURPOSE>`; indexes: `IX_<TABLE>_<PURPOSE>`.
@@ -118,6 +118,50 @@ Sequence: `SEQ_SYS_USER_DATA_SCOPE`.
 - GoldenGate copies Phase 1 PK/FK values unchanged. Targets never regenerate replicated IDs, and sequence state is never replicated.
 - Parent/child inserts participate in one application-service transaction. Oracle DDL remains non-transactional.
 
+## Phase 2 master data
+
+Migration 004 adds `SYS_JOB_TYPE`, `SYS_HAZARD_PROMPT`, `SYS_POSITION`, `SYS_TOOL_CATEGORY`, `SYS_TOOL`, `SYS_LANGUAGE`, `SYS_PROCEDURE_REFERENCE`, and `SYS_SYSTEM_PARAMETER`. Every table has its own `NUMBER(19)` primary key and sequence, active state, display order, audit columns, and optimistic `ROW_VERSION`.
+
+Master-data codes are case-insensitively unique among active records inside their exact ownership scope. The supported scope hierarchy is `GLOBAL`, `SITE`, `RIG`, and, where applicable, `DEPARTMENT`; composite foreign keys prevent a Rig or Department from being paired with the wrong Site. Ordinary administration deactivates records instead of deleting them. Tools must reference an active Tool Category. System Parameters support the declared types `STRING`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE`, and `JSON`; secret-like keys are rejected by the application because this table is not a secret store.
+
+No production master-data rows are seeded. Job types, prompts, positions, tools, languages, procedure references, parameter keys/values, and their ownership scopes require approved operational input.
+
+## Phase 2 Risk Matrix model
+
+- `JSA_RISK_MATRIX` is the stable Matrix identity and fixes the dimension at 3 or 5.
+- `JSA_RISK_MATRIX_VERSION` owns one versioned configuration. Version codes are unique inside a Matrix.
+- `JSA_RISK_LIKELIHOOD` and `JSA_RISK_SEVERITY` store textual display codes, labels, definitions, optional numeric metadata, and explicit display order. Severity additionally supports separate people, asset, and environmental definitions.
+- `JSA_RISK_RESULT` stores the configured semantic result, color/guidance metadata, and prohibited flag.
+- `JSA_RISK_MATRIX_CELL` is an explicit lookup from one likelihood and one severity to a configured Risk Result and textual and/or numeric rating. Composite foreign keys require the axes, result, and cell to belong to the same Matrix Version. There is no arithmetic score or hard-coded risk formula.
+- `JSA_RIG_MATRIX_ASSIGNMENT` gives one Rig an effective-dated Matrix Version. `EFFECTIVE_TO` is exclusive and must be later than `EFFECTIVE_FROM`.
+
+A Matrix Version is complete only when it has exactly its declared dimension of active likelihoods and severities, at least one active Risk Result, and one valid active cell for every likelihood/severity pair. Thus a complete 3×3 version has 9 cells and a complete 5×5 version has 25 cells. Duplicate pairs, missing ratings, foreign-version references, inactive references, and extra or missing axes block assignment.
+
+Configuration remains editable only while a Matrix Version has never been assigned. Once referenced by any current or historical Rig assignment, its axes, results, and cells are immutable; material changes require a new version. Assignment writes lock the Rig row before overlap detection so concurrent requests for the same Rig serialize. The application rejects intersecting active periods, incomplete/inactive versions, inactive parent Matrices, unauthorized Rig scopes, and ambiguous effective lookup.
+
+Migration 004 creates 15 sequences for its 15 tables. `db:bootstrap:phase2` only configures those allowlisted sequences from the already-approved local Phase 1 range; it does not insert business data. GoldenGate must preserve all source IDs and must not replicate sequence state.
+
+## Phase 3 JSA Draft and version model
+
+Migration 005 adds `JSA_MASTER`, `JSA_VERSION`, `JSA_VERSION_PROMPT`, `JSA_VERSION_PROMPT_COVERAGE`, `JSA_VERSION_TASK`, `JSA_VERSION_HAZARD`, `JSA_VERSION_CONTROL`, `JSA_VERSION_BASIC_STEP`, `JSA_VER_BASIC_STEP_PERFORMER`, `JSA_VER_BASIC_STEP_SUPERVISOR`, `JSA_VER_BASIC_STEP_TOOL`, `JSA_VERSION_PROCEDURE_REF`, and `JSA_VERSION_ATTACHMENT`.
+
+`JSA_MASTER` owns the stable number, ownership hierarchy, creator, lifecycle status, and nullable Current/Working Version pointers. Initially Current is null and Working references the first Draft `JSA_VERSION`. Composite foreign keys ensure both pointers belong to the same Master. Configurable `NUMBER_SCOPE_KEY` plus `JSA_NUMBER` uniqueness supports an approved global or per-site policy without embedding that open decision.
+
+Every version-owned row has its own `NUMBER(19)` primary key and stable `LOGICAL_KEY`, unique inside its version. Composite foreign keys prevent Task, Hazard, Control, prompt coverage, Basic Job Step, and assignment links from crossing versions. Active flags and optimistic `ROW_VERSION` support soft deactivation rather than physical replacement.
+
+Hazards store independent initial/residual likelihood and severity IDs plus server-derived cell, textual rating, result code/name, and prohibited snapshots. Basic Job Steps are independently ordered and may optionally link to a Task. Performer/Supervisor Position and Tool assignments retain source IDs and code/name snapshots. Procedure references retain governed snapshots. Attachments contain metadata/status/storage key only.
+
+Migration 005 creates one sequence per table key plus `SEQ_JSA_BUSINESS_NUMBER` (14 total). All are included in startup site-range validation and the controlled Phase 3 bootstrap. GoldenGate copies IDs/logical keys unchanged and never replicates sequence state.
+
 ## Phase 0A development policy
 
 The Windows development environment selects node-oracledb Thick mode. Oracle Database 23.0.0.0.0 and Instant Client 23.9 were verified; Phase 0 SQL uses only Oracle 19c-compatible features, although execution against an actual 19c instance was not part of Phase 0A. The dedicated development schema is `JSA_APP`, as confirmed during Phase 0A; no rollback runs until session user, current schema, service `PDBAPPS`, project-object ownership, and non-production status are confirmed. Ordinary migration SQL uses semicolons; PL/SQL ends with slash on a separate line. Oracle DDL implicitly commits, so rollback is compensating DDL and partial failures require operator review.
+## Phase 4 Approval Workflow and Initial Publishing
+
+Migration 006 extends Master status with `PUBLISHED`, expands Version status to 30 characters for all review/terminal states, and adds `PUBLISHED_AT`, `PUBLISHED_BY_USER_ID`, and `PUBLISHED_BY_USERNAME`. A check constraint requires complete publication metadata only for `PUBLISHED`.
+
+Configuration tables are `JSA_WORKFLOW_DEFINITION`, `JSA_WORKFLOW_STEP`, `JSA_WORKFLOW_BINDING`, and `JSA_WF_ROLE_ASSIGNMENT`. Runtime/evidence tables are `JSA_WORKFLOW_INSTANCE`, `JSA_WORKFLOW_TASK`, `JSA_WORKFLOW_ACTION`, `SYS_NOTIFICATION`, and `SYS_NOTIFICATION_OUTBOX`.
+
+`JSA_ASSERT_VERSION_MUTABLE` plus twelve `TRG_JSA_*` triggers block mutation of a Published Version and all version-owned snapshot children. Application state predicates remain an additional guard.
+
+Phase 4 owns nine explicit sequences for definition, step, binding, role assignment, instance, task, action, notification, and outbox. All participate in startup Site-range validation and Phase 4 bootstrap; `MAX(id)+1` is prohibited.

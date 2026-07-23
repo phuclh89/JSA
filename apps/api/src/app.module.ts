@@ -12,6 +12,10 @@ import { OracleModule } from './common/oracle/oracle.module';
 import { HealthModule } from './modules/health/health.module';
 import { SystemModule } from './modules/system/system.module';
 import { SecurityModule } from './modules/security/security.module';
+import { MasterDataModule } from './modules/master-data/master-data.module';
+import { RiskMatrixModule } from './modules/risk-matrix/risk-matrix.module';
+import { JsaDraftModule } from './modules/jsa-draft/jsa-draft.module';
+import { JsaWorkflowModule } from './modules/jsa-workflow/jsa-workflow.module';
 
 @Module({
   imports: [
@@ -25,6 +29,10 @@ import { SecurityModule } from './modules/security/security.module';
     LoggingModule,
     OracleModule,
     SecurityModule,
+    MasterDataModule,
+    RiskMatrixModule,
+    JsaDraftModule,
+    JsaWorkflowModule,
     HealthModule,
     SystemModule,
   ],

@@ -1,4 +1,4 @@
-import { MenuOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons';
+import { FileAddOutlined, MenuOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons';
 import {
   Avatar,
   Badge,
@@ -12,10 +12,13 @@ import {
   Typography,
 } from 'antd';
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { navigationItems } from '../../app/navigation';
 import { useAuth } from '../../features/auth/auth-context';
 import './app-shell.css';
+import { jsaApi } from '../../features/jsa/jsa-api';
+import { workflowApi } from '../../features/jsa/workflow-api';
 
 const { Header, Sider, Content } = Layout;
 export function AppShell() {
@@ -23,9 +26,11 @@ export function AppShell() {
   const location = useLocation();
   const { user, logout } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const jsaCapabilities = useQuery({ queryKey: ['jsa-capabilities'], queryFn: jsaApi.capabilities });
+  const workflowCapabilities = useQuery({queryKey:['workflow-capabilities'],queryFn:workflowApi.capabilities});
   const items = useMemo(
-    () => navigationItems.filter((item) => user?.permissions.includes(item.permission)),
-    [user],
+    () => [...navigationItems.filter((item) => user?.permissions.includes(item.permission)),...(jsaCapabilities.data?.create?[{key:'/jsa/new',label:'Create JSA',permission:'',area:'browse' as const,icon:<FileAddOutlined/>}]:[]),...(workflowCapabilities.data?.view?[{key:'/jsa/approvals',label:'Needs Approval',permission:'',area:'browse' as const,icon:<FileAddOutlined/>},{key:'/jsa/pending',label:'Pending Approval',permission:'',area:'browse' as const,icon:<FileAddOutlined/>},{key:'/jsa/rejected',label:'Rejected JSA',permission:'',area:'browse' as const,icon:<FileAddOutlined/>},{key:'/jsa/published',label:'Published JSA',permission:'',area:'browse' as const,icon:<FileAddOutlined/>}]:[]),...(workflowCapabilities.data?.admin?[{key:'/operations/workflow',label:'Approval Workflow',permission:'',area:'operations' as const,icon:<FileAddOutlined/>}]:[])],
+    [user, jsaCapabilities.data?.create,workflowCapabilities.data?.view,workflowCapabilities.data?.admin],
   );
   const area = location.pathname.startsWith('/operations') ? 'operations' : 'browse';
   const menu = (

@@ -32,6 +32,15 @@ async function main(): Promise<void> {
     if (!expectedService || session.SERVICE_NAME.toUpperCase() !== expectedService)
       throw new Error('Rollback refused: connected service does not match ORACLE_CONNECT_STRING');
     const existing = await history(connection);
+    if (existing.some((item) => item.MIGRATION_ID === '004' && item.STATUS_CODE === 'APPLIED')) {
+      const phase2Objects = await connection.execute<{ OBJECT_COUNT: number }>(
+        `SELECT COUNT(*) AS OBJECT_COUNT FROM USER_TABLES WHERE TABLE_NAME IN ('SYS_JOB_TYPE','SYS_HAZARD_PROMPT','SYS_POSITION','SYS_TOOL_CATEGORY','SYS_TOOL','SYS_LANGUAGE','SYS_PROCEDURE_REFERENCE','SYS_SYSTEM_PARAMETER','JSA_RISK_MATRIX','JSA_RISK_MATRIX_VERSION','JSA_RISK_LIKELIHOOD','JSA_RISK_SEVERITY','JSA_RISK_RESULT','JSA_RISK_MATRIX_CELL','JSA_RIG_MATRIX_ASSIGNMENT')`,
+        {},
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      if (phase2Objects.rows?.[0]?.OBJECT_COUNT !== 15)
+        throw new Error('Rollback refused: Phase 2 ownership markers are incomplete');
+    }
     if (existing.some((item) => item.MIGRATION_ID === '002' && item.STATUS_CODE === 'APPLIED')) {
       const phase1Objects = await connection.execute<{ OBJECT_COUNT: number }>(
         `SELECT COUNT(*) AS OBJECT_COUNT FROM USER_TABLES

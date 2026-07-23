@@ -1,8 +1,18 @@
 :root {
+  --color-near-black: #0e0f0c;
+  --color-lime: #9fe870;
+  --color-dark-green: #163300;
+  --color-page-surface: #f5f7f3;
+  --color-border: rgba(14, 15, 12, 0.12);
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --radius-input: 10px;
+  --radius-standard: 16px;
   font-family: Inter, Helvetica, Arial, sans-serif;
   font-feature-settings: 'calt' 1;
-  color: #0e0f0c;
-  background: #f5f7f3;
+  color: var(--color-near-black);
+  background: var(--color-page-surface);
 }
 * {
   box-sizing: border-box;
@@ -18,8 +28,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #0e0f0c;
-  border-bottom: 1px solid #9fe870;
+  background: var(--color-near-black);
+  border-bottom: 1px solid var(--color-lime);
   padding: 0 24px;
 }
 .app-header h4 {
@@ -28,7 +38,7 @@ body {
   font-weight: 900;
 }
 .brand-icon {
-  color: #9fe870;
+  color: var(--color-lime);
   font-size: 24px;
 }
 .app-header .ant-btn {
@@ -46,7 +56,7 @@ body {
   margin: 0;
 }
 .side-nav {
-  border-right: 1px solid rgba(14, 15, 12, 0.12);
+  border-right: 1px solid var(--color-border);
   padding: 20px 12px;
 }
 .side-nav > span {
@@ -58,7 +68,7 @@ body {
 .action-bar {
   height: 48px;
   background: #fff;
-  border-bottom: 1px solid rgba(14, 15, 12, 0.12);
+  border-bottom: 1px solid var(--color-border);
   padding: 14px 24px;
 }
 .main-content {
@@ -66,7 +76,7 @@ body {
   padding: 24px;
   background: #fff;
   min-height: 400px;
-  border: 1px solid rgba(14, 15, 12, 0.12);
+  border: 1px solid var(--color-border);
   border-radius: 30px;
   box-shadow: rgba(14, 15, 12, 0.12) 0 0 0 1px;
 }

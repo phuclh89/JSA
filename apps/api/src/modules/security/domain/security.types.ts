@@ -34,6 +34,7 @@ export interface AuditEvent {
   targetType: string;
   targetId?: string;
   siteId?: string;
+  rigId?: string;
   clientContext?: string;
   previousState?: unknown;
   nextState?: unknown;

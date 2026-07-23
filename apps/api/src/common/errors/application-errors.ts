@@ -87,3 +87,41 @@ export class OracleUnavailableError extends ApplicationError {
     );
   }
 }
+export class MatrixIncompleteError extends ApplicationError {
+  constructor(details: unknown[] = []) {
+    super(
+      'MATRIX_VERSION_INCOMPLETE',
+      'The Matrix Version is incomplete',
+      HttpStatus.CONFLICT,
+      details,
+    );
+  }
+}
+export class OverlappingAssignmentError extends ApplicationError {
+  constructor(details: unknown[] = []) {
+    super(
+      'RIG_MATRIX_ASSIGNMENT_OVERLAP',
+      'The assignment overlaps an existing Rig Matrix assignment',
+      HttpStatus.CONFLICT,
+      details,
+    );
+  }
+}
+export class NoEffectiveMatrixError extends ApplicationError {
+  constructor() {
+    super(
+      'NO_EFFECTIVE_MATRIX',
+      'No effective Matrix Version is configured for this rig and time',
+      HttpStatus.NOT_FOUND,
+    );
+  }
+}
+export class MultipleEffectiveMatricesError extends ApplicationError {
+  constructor() {
+    super(
+      'MULTIPLE_EFFECTIVE_MATRICES',
+      'Multiple effective Matrix Versions were detected',
+      HttpStatus.CONFLICT,
+    );
+  }
+}

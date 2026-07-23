@@ -1,0 +1,15 @@
+.workflow-page {
+  display: grid;
+  gap: 20px;
+  margin: 0 auto;
+  max-width: 1440px;
+  padding: 28px;
+}
+.workflow-page > .ant-typography {
+  margin-bottom: 0;
+}
+@media (max-width: 720px) {
+  .workflow-page {
+    padding: 16px;
+  }
+}

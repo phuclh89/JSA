@@ -1,0 +1,510 @@
+.jsa-create,
+.jsa-editor {
+  max-width: 1680px;
+  margin: 0 auto;
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--color-dark-green);
+}
+
+.jsa-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-16);
+}
+
+.matrix-summary {
+  min-height: 72px;
+  padding: var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jsa-editor-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-24);
+  margin-bottom: var(--space-16);
+}
+
+.jsa-editor-heading h1 {
+  margin: 4px 0 8px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.jsa-worksheet {
+  padding-bottom: 88px;
+}
+
+.worksheet-section {
+  margin-top: var(--space-16);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  background: #fff;
+  overflow: hidden;
+  box-shadow: rgba(14, 15, 12, 0.06) 0 0 0 1px;
+}
+
+.worksheet-section-title {
+  min-height: 44px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  background: var(--color-near-black);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+}
+
+.worksheet-section-title .ant-btn-default {
+  color: var(--color-dark-green);
+  background: var(--color-lime);
+  border-color: var(--color-lime);
+}
+
+.worksheet-general-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-12) var(--space-16);
+  padding: var(--space-16);
+}
+
+.worksheet-general-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.worksheet-general-grid label > span {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.worksheet-general-grid .span-2 {
+  grid-column: span 2;
+}
+
+.worksheet-general-grid .span-full {
+  grid-column: 1 / -1;
+}
+
+.worksheet-ptw {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr);
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.prompt-item {
+  min-height: 48px;
+  padding: 10px 12px;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prompt-item .ant-checkbox-wrapper {
+  align-items: flex-start;
+}
+
+.matrix-layout {
+  display: grid;
+  grid-template-columns: minmax(540px, 1fr) minmax(220px, 0.35fr);
+  gap: var(--space-16);
+  padding: var(--space-16);
+}
+
+.matrix-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) repeat(5, minmax(76px, 1fr));
+  border-top: 1px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
+}
+
+.matrix-row {
+  display: contents;
+}
+
+.matrix-corner,
+.matrix-axis,
+.matrix-cell {
+  min-height: 58px;
+  padding: 6px;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.matrix-axis {
+  flex-direction: column;
+  font-weight: 800;
+  background: #f0f2ee;
+}
+
+.matrix-axis small {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.matrix-cell {
+  flex-direction: column;
+  color: var(--color-near-black);
+}
+
+.matrix-cell span {
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.risk-legend {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+}
+
+.risk-legend > div {
+  min-height: 44px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.risk-legend > div > span {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(14, 15, 12, 0.3);
+}
+
+.reference-table-wrap,
+.worksheet-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.reference-table,
+.worksheet-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.reference-table th,
+.reference-table td,
+.worksheet-table th,
+.worksheet-table td {
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.875rem;
+}
+
+.reference-table th,
+.worksheet-table th {
+  background: #e8ebe6;
+  color: var(--color-near-black);
+  font-weight: 800;
+  text-align: center;
+}
+
+.task-risk-table {
+  min-width: 1380px;
+}
+
+.task-risk-table th:nth-child(1) {
+  width: 58px;
+}
+
+.task-risk-table th:nth-child(2) {
+  width: 220px;
+}
+
+.task-risk-table th:nth-child(3) {
+  width: 230px;
+}
+
+.task-risk-table th:nth-child(7) {
+  width: 280px;
+}
+
+.task-cell {
+  min-width: 210px;
+}
+
+.task-cell .ant-input {
+  margin-bottom: 6px;
+}
+
+.continued-label {
+  color: var(--color-gray, #868685);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.risk-select-cell {
+  width: 72px;
+  min-width: 72px;
+}
+
+.risk-select-cell .ant-select {
+  width: 58px;
+}
+
+.risk-result-cell {
+  width: 84px;
+  min-width: 84px;
+  text-align: center !important;
+}
+
+.risk-result-cell > span {
+  min-width: 40px;
+  min-height: 32px;
+  padding: 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  border: 1px solid rgba(14, 15, 12, 0.25);
+}
+
+.risk-result-cell small {
+  margin-top: 4px;
+  display: block;
+  font-size: 0.65rem;
+}
+
+.control-entry {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.basic-step-table {
+  min-width: 1080px;
+}
+
+.basic-step-table th:first-child {
+  width: 70px;
+}
+
+.basic-step-table th:nth-child(2) {
+  width: 28%;
+}
+
+.basic-step-table th:last-child {
+  width: 56px;
+}
+
+.assignment-summary {
+  min-width: 190px;
+}
+
+.assignment-summary > .ant-btn {
+  margin-bottom: 8px;
+}
+
+.assignment-summary .ant-tag {
+  margin-bottom: 4px;
+  white-space: normal;
+}
+
+.reference-transfer .ant-transfer-list {
+  flex: 1;
+}
+
+.reference-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16);
+  padding: var(--space-16);
+}
+
+.reference-grid .ant-card {
+  margin: 0;
+}
+
+.attachment-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: var(--space-12);
+  align-items: end;
+  margin-top: var(--space-12);
+}
+
+.list-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.worksheet-empty {
+  padding: var(--space-24) !important;
+  text-align: center !important;
+  color: #454745;
+}
+
+.validation-section > .ant-alert {
+  margin: var(--space-16);
+}
+
+.validation-row {
+  margin: 0 var(--space-16);
+  padding: var(--space-12) 0;
+  display: grid;
+  grid-template-columns: auto minmax(180px, 0.25fr) 1fr;
+  gap: var(--space-12);
+  border-top: 1px solid var(--color-border);
+}
+
+.worksheet-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: var(--space-16);
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-16);
+  background: rgba(245, 247, 243, 0.96);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  box-shadow: rgba(14, 15, 12, 0.16) 0 -2px 0;
+  backdrop-filter: blur(8px);
+}
+
+.worksheet-footer > div:first-child {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 1200px) {
+  .worksheet-general-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prompt-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .matrix-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 991px) {
+  .jsa-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .jsa-editor-heading {
+    flex-direction: column;
+  }
+
+  .jsa-editor-heading > div,
+  .jsa-editor-heading > .ant-space {
+    width: 100%;
+  }
+
+  .prompt-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reference-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reference-transfer {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  .jsa-form-grid,
+  .worksheet-general-grid,
+  .reference-grid,
+  .attachment-form {
+    grid-template-columns: 1fr;
+  }
+
+  .worksheet-general-grid .span-2,
+  .worksheet-general-grid .span-full {
+    grid-column: auto;
+  }
+
+  .worksheet-ptw {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .matrix-layout {
+    padding: var(--space-12);
+    overflow-x: auto;
+  }
+
+  .matrix-grid {
+    min-width: 650px;
+  }
+
+  .worksheet-section-title,
+  .worksheet-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .worksheet-footer .ant-btn,
+  .worksheet-top-actions .ant-btn {
+    min-height: 44px;
+  }
+
+  .reference-transfer {
+    display: flex;
+    min-width: 720px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jsa-editor *,
+  .jsa-create * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}

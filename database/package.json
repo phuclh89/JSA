@@ -10,7 +10,13 @@
     "status": "tsx scripts/status.ts",
     "verify": "tsx scripts/verify.ts",
     "verify:phase1": "tsx scripts/verify-phase1-behavior.ts",
+    "verify:phase2": "tsx scripts/verify-phase2-behavior.ts",
+    "verify:phase3": "tsx scripts/verify-phase3-behavior.ts",
+    "verify:phase4": "tsx scripts/verify-phase4-behavior.ts",
     "bootstrap:phase1": "tsx scripts/bootstrap-phase1.ts",
+    "bootstrap:phase2": "tsx scripts/bootstrap-phase2.ts",
+    "bootstrap:phase3": "tsx scripts/bootstrap-phase3.ts",
+    "bootstrap:phase4": "tsx scripts/bootstrap-phase4.ts",
     "up": "tsx scripts/migrate.ts",
     "down": "tsx scripts/rollback.ts"
   },
