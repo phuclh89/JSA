@@ -43,6 +43,33 @@ export class JsaWorkflowService {
       return this.resolve(c, target);
     });
   }
+  async previewContext(
+    input: {
+      siteId: string;
+      rigId: string;
+      departmentId: string;
+      jobTypeId?: string;
+      jsaVersionId?: string;
+    },
+    user: AuthenticatedUser,
+  ): Promise<WorkflowPreview> {
+    const target: WorkflowTarget = {
+      jsaId: '0',
+      versionId: input.jsaVersionId ?? '0',
+      jsaNumber: 'PREVIEW',
+      siteId: input.siteId,
+      rigId: input.rigId,
+      departmentId: input.departmentId,
+      ...(input.jobTypeId ? { jobTypeId: input.jobTypeId } : {}),
+      creatorUserId: user.userId,
+      masterStatus: 'DRAFT',
+      versionStatus: 'DRAFT',
+      masterRowVersion: '0',
+      versionRowVersion: '0',
+    };
+    this.scope(user, target, 'ACT');
+    return this.oracle.withTransaction((context) => this.resolve(context, target));
+  }
   async submit(jsaId: string, user: AuthenticatedUser) {
     this.capabilities.require(user, 'submit');
     await this.oracle.withTransaction(async (c) => {

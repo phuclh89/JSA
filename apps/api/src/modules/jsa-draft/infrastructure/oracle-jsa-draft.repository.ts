@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import oracledb from 'oracledb';
 import type {
   JsaDraftHeader,
+  JsaDraftListItem,
   JsaPositionSnapshot,
   JsaRiskSelection,
   JsaToolSnapshot,
@@ -27,33 +28,82 @@ import type { DraftLoadRecord, JsaDraftRepository } from '../domain/jsa-draft.re
 
 const options = { outFormat: oracledb.OUT_FORMAT_OBJECT };
 type Row = Record<string, any>;
+const withoutRowVersion = (binds: Row) =>
+  Object.fromEntries(Object.entries(binds).filter(([key]) => key !== 'rowVersion'));
 
 @Injectable()
 export class OracleJsaDraftRepository implements JsaDraftRepository {
+  async listMine(context: OracleTransactionContext, userId: string): Promise<JsaDraftListItem[]> {
+    assertOracleId(userId, 'userId');
+    const result = await context.connection.execute<Row>(
+      `SELECT TO_CHAR(M.JSA_ID) JSA_ID,TO_CHAR(V.JSA_VERSION_ID) VERSION_ID,M.JSA_NUMBER,V.JOB_TITLE,V.VERSION_STATUS,S.SITE_CODE,S.SITE_NAME,R.RIG_CODE,R.RIG_NAME,D.DEPARTMENT_CODE,D.DEPARTMENT_NAME,V.UPDATED_AT
+       FROM JSA_MASTER M
+       JOIN JSA_VERSION V ON V.JSA_VERSION_ID=M.WORKING_VERSION_ID AND V.JSA_ID=M.JSA_ID
+       JOIN SYS_SITE S ON S.SITE_ID=M.OWNER_SITE_ID
+       JOIN SYS_RIG R ON R.RIG_ID=M.RIG_ID
+       JOIN SYS_DEPARTMENT D ON D.DEPARTMENT_ID=M.DEPARTMENT_ID
+       WHERE M.CREATOR_USER_ID=:userId
+         AND M.LIFECYCLE_STATUS='DRAFT'
+         AND V.VERSION_STATUS IN ('DRAFT','RETURNED')
+         AND EXISTS(
+           SELECT 1
+           FROM SYS_USER_DATA_SCOPE DS
+           WHERE DS.USER_ID=:userId
+             AND DS.IS_ACTIVE='Y'
+             AND DS.EFFECTIVE_FROM<=SYSTIMESTAMP
+             AND (DS.EFFECTIVE_TO IS NULL OR DS.EFFECTIVE_TO>=SYSTIMESTAMP)
+             AND DS.CAN_VIEW='Y'
+             AND DS.SITE_ID=M.OWNER_SITE_ID
+             AND (
+               DS.SCOPE_TYPE='SITE'
+               OR (DS.SCOPE_TYPE='RIG' AND DS.RIG_ID=M.RIG_ID)
+               OR (
+                 DS.SCOPE_TYPE='DEPARTMENT'
+                 AND DS.DEPARTMENT_ID=M.DEPARTMENT_ID
+                 AND (DS.RIG_ID IS NULL OR DS.RIG_ID=M.RIG_ID)
+               )
+             )
+         )
+       ORDER BY V.UPDATED_AT DESC,V.JSA_VERSION_ID DESC`,
+      { userId },
+      options,
+    );
+    return (result.rows ?? []).map((row) => ({
+      jsaId: row.JSA_ID,
+      versionId: row.VERSION_ID,
+      jsaNumber: row.JSA_NUMBER,
+      ...(row.JOB_TITLE ? { jobTitle: row.JOB_TITLE } : {}),
+      versionStatus: row.VERSION_STATUS,
+      ownerSiteCode: row.SITE_CODE,
+      ownerSiteName: row.SITE_NAME,
+      rigCode: row.RIG_CODE,
+      rigName: row.RIG_NAME,
+      departmentCode: row.DEPARTMENT_CODE,
+      departmentName: row.DEPARTMENT_NAME,
+      updatedAt: row.UPDATED_AT,
+    }));
+  }
+
   async validateCreate(
     context: OracleTransactionContext,
     input: CreateDraftInput,
-  ): Promise<{ matrixVersionId: string }> {
+  ): Promise<{ matrixVersionId: string; languageId: string }> {
     const result = await context.connection.execute<Row>(
-      `SELECT TO_CHAR(R.RIG_ID) RIG_ID,TO_CHAR(D.DEPARTMENT_ID) DEPARTMENT_ID,TO_CHAR(J.JOB_TYPE_ID) JOB_TYPE_ID,
+      `SELECT TO_CHAR(R.RIG_ID) RIG_ID,TO_CHAR(D.DEPARTMENT_ID) DEPARTMENT_ID,
       (SELECT MIN(TO_CHAR(A.MATRIX_VERSION_ID)) FROM JSA_RIG_MATRIX_ASSIGNMENT A JOIN JSA_RISK_MATRIX_VERSION V ON V.MATRIX_VERSION_ID=A.MATRIX_VERSION_ID JOIN JSA_RISK_MATRIX M ON M.MATRIX_ID=V.MATRIX_ID WHERE A.RIG_ID=R.RIG_ID AND A.IS_ACTIVE='Y' AND A.EFFECTIVE_FROM<=SYSTIMESTAMP AND (A.EFFECTIVE_TO IS NULL OR A.EFFECTIVE_TO>SYSTIMESTAMP) AND V.IS_ACTIVE='Y' AND M.IS_ACTIVE='Y') MATRIX_VERSION_ID,
       (SELECT COUNT(*) FROM JSA_RIG_MATRIX_ASSIGNMENT A WHERE A.RIG_ID=R.RIG_ID AND A.IS_ACTIVE='Y' AND A.EFFECTIVE_FROM<=SYSTIMESTAMP AND (A.EFFECTIVE_TO IS NULL OR A.EFFECTIVE_TO>SYSTIMESTAMP)) MATRIX_COUNT
-      FROM SYS_RIG R JOIN SYS_DEPARTMENT D ON D.DEPARTMENT_ID=:departmentId AND D.RIG_ID=R.RIG_ID AND D.SITE_ID=R.SITE_ID JOIN SYS_JOB_TYPE J ON J.JOB_TYPE_ID=:jobTypeId
-      WHERE R.RIG_ID=:rigId AND R.SITE_ID=:siteId AND R.IS_ACTIVE='Y' AND D.IS_ACTIVE='Y' AND J.IS_ACTIVE='Y'
-      AND (J.SCOPE_TYPE='GLOBAL' OR (J.SITE_ID=:siteId AND (J.RIG_ID IS NULL OR J.RIG_ID=:rigId) AND (J.DEPARTMENT_ID IS NULL OR J.DEPARTMENT_ID=:departmentId)))`,
+      FROM SYS_RIG R JOIN SYS_DEPARTMENT D ON D.DEPARTMENT_ID=:departmentId AND D.RIG_ID=R.RIG_ID AND D.SITE_ID=R.SITE_ID
+      WHERE R.RIG_ID=:rigId AND R.SITE_ID=:siteId AND R.IS_ACTIVE='Y' AND D.IS_ACTIVE='Y'`,
       {
         siteId: input.ownerSiteId,
         rigId: input.rigId,
         departmentId: input.departmentId,
-        jobTypeId: input.jobTypeId,
       },
       options,
     );
     const row = result.rows?.[0];
     if (!row)
-      throw new ValidationError(
-        'Site, Rig, Department, or Job Type is not an active compatible selection',
-      );
+      throw new ValidationError('Site, Rig, or Department is not an active compatible selection');
     if (row.MATRIX_COUNT !== 1 || !row.MATRIX_VERSION_ID)
       throw new StateConflictError(
         row.MATRIX_COUNT === 0
@@ -73,21 +123,26 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
       c.C_COUNT !== c.DIMENSION_SIZE * c.DIMENSION_SIZE
     )
       throw new StateConflictError('The effective Matrix Version is incomplete');
-    if (input.languageId) {
-      const lang = await context.connection.execute<Row>(
-        `SELECT COUNT(*) C FROM SYS_LANGUAGE WHERE LANGUAGE_ID=:id AND IS_ACTIVE='Y'`,
-        { id: input.languageId },
-        options,
+    const language = await context.connection.execute<Row>(
+      `SELECT MIN(TO_CHAR(LANGUAGE_ID)) LANGUAGE_ID,COUNT(*) C
+       FROM SYS_LANGUAGE
+       WHERE UPPER(LANGUAGE_CODE)='EN' AND IS_ACTIVE='Y'`,
+      {},
+      options,
+    );
+    const english = language.rows?.[0];
+    if (!english || english.C !== 1 || !english.LANGUAGE_ID)
+      throw new StateConflictError(
+        'Exactly one active English language with code EN must be configured',
       );
-      if (lang.rows?.[0]?.C !== 1) throw new ValidationError('Language is not active');
-    }
-    return { matrixVersionId: row.MATRIX_VERSION_ID };
+    return { matrixVersionId: row.MATRIX_VERSION_ID, languageId: english.LANGUAGE_ID };
   }
 
   async create(
     context: OracleTransactionContext,
     input: CreateDraftInput,
     matrixVersionId: string,
+    languageId: string,
     number: { number: string; scopeKey: string },
     userId: string,
     actor: string,
@@ -108,8 +163,8 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
       },
     );
     await context.connection.execute(
-      `INSERT INTO JSA_VERSION(JSA_VERSION_ID,JSA_ID,VERSION_NUMBER,OWNER_SITE_ID,RIG_ID,DEPARTMENT_ID,JOB_TYPE_ID,MATRIX_VERSION_ID,LANGUAGE_ID,CREATED_BY,UPDATED_BY) VALUES(:versionId,:jsaId,1,:ownerSiteId,:rigId,:departmentId,:jobTypeId,:matrixVersionId,:languageId,:actor,:actor)`,
-      { versionId, jsaId, ...input, matrixVersionId, languageId: input.languageId ?? null, actor },
+      `INSERT INTO JSA_VERSION(JSA_VERSION_ID,JSA_ID,VERSION_NUMBER,OWNER_SITE_ID,RIG_ID,DEPARTMENT_ID,MATRIX_VERSION_ID,LANGUAGE_ID,CREATED_BY,UPDATED_BY) VALUES(:versionId,:jsaId,1,:ownerSiteId,:rigId,:departmentId,:matrixVersionId,:languageId,:actor,:actor)`,
+      { versionId, jsaId, ...input, matrixVersionId, languageId, actor },
     );
     await context.connection.execute(
       `UPDATE JSA_MASTER SET WORKING_VERSION_ID=:versionId WHERE JSA_ID=:jsaId`,
@@ -153,16 +208,10 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
     actor: string,
   ): Promise<void> {
     const result = await context.connection.execute(
-      `UPDATE JSA_VERSION SET JOB_TYPE_ID=:jobTypeId,LANGUAGE_ID=:languageId,JOB_TITLE=:jobTitle,JOB_DESCRIPTION=:jobDescription,LOCATION_TEXT=:location,PERSONNEL_TEXT=:personnel,PTW_REQUIRED_FLAG=:ptwRequired,PTW_REFERENCE=:ptwReference,UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1 WHERE JSA_VERSION_ID=:versionId AND ROW_VERSION=:versionRowVersion AND VERSION_STATUS IN ('DRAFT','RETURNED')`,
+      `UPDATE JSA_VERSION SET JOB_TITLE=:jobTitle,UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1 WHERE JSA_VERSION_ID=:versionId AND ROW_VERSION=:versionRowVersion AND VERSION_STATUS IN ('DRAFT','RETURNED')`,
       {
-        ...input,
-        languageId: input.languageId ?? null,
+        ...withoutRowVersion(input),
         jobTitle: input.jobTitle ?? null,
-        jobDescription: input.jobDescription ?? null,
-        location: input.location ?? null,
-        personnel: input.personnel ?? null,
-        ptwRequired: input.ptwRequired ? 'Y' : 'N',
-        ptwReference: input.ptwReference ?? null,
         actor,
         versionId: access.versionId,
       },
@@ -294,7 +343,7 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
         versionId: access.versionId,
         rowVersion: item.rowVersion,
         parentId: parentId ?? null,
-        number: item.number ?? null,
+        taskNumber: item.number ?? null,
         title: item.title,
         description: item.description ?? null,
         displayOrder: item.displayOrder,
@@ -303,13 +352,13 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
       if (item.id)
         await this.updateOne(
           context,
-          `UPDATE JSA_VERSION_TASK SET PARENT_TASK_ID=:parentId,TASK_NUMBER=:number,TASK_TITLE=:title,TASK_DESCRIPTION=:description,DISPLAY_ORDER=:displayOrder,IS_ACTIVE='Y',UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1 WHERE VERSION_TASK_ID=:id AND JSA_VERSION_ID=:versionId AND ROW_VERSION=:rowVersion`,
+          `UPDATE JSA_VERSION_TASK SET PARENT_TASK_ID=:parentId,TASK_NUMBER=:taskNumber,TASK_TITLE=:title,TASK_DESCRIPTION=:description,DISPLAY_ORDER=:displayOrder,IS_ACTIVE='Y',UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1 WHERE VERSION_TASK_ID=:id AND JSA_VERSION_ID=:versionId AND ROW_VERSION=:rowVersion`,
           binds,
         );
       else
         await context.connection.execute(
-          `INSERT INTO JSA_VERSION_TASK(VERSION_TASK_ID,JSA_VERSION_ID,LOGICAL_KEY,PARENT_TASK_ID,TASK_NUMBER,TASK_TITLE,TASK_DESCRIPTION,DISPLAY_ORDER,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:id,:parentId,:number,:title,:description,:displayOrder,:actor,:actor)`,
-          binds,
+          `INSERT INTO JSA_VERSION_TASK(VERSION_TASK_ID,JSA_VERSION_ID,LOGICAL_KEY,PARENT_TASK_ID,TASK_NUMBER,TASK_TITLE,TASK_DESCRIPTION,DISPLAY_ORDER,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:id,:parentId,:taskNumber,:title,:description,:displayOrder,:actor,:actor)`,
+          withoutRowVersion(binds),
         );
     }
 
@@ -351,7 +400,7 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
         else
           await context.connection.execute(
             `INSERT INTO JSA_VERSION_HAZARD(VERSION_HAZARD_ID,JSA_VERSION_ID,LOGICAL_KEY,VERSION_TASK_ID,HAZARD_TEXT,DISPLAY_ORDER,INITIAL_LIKELIHOOD_ID,INITIAL_SEVERITY_ID,INITIAL_CELL_ID,INITIAL_RATING_CODE,INITIAL_RESULT_CODE,INITIAL_RESULT_NAME,INITIAL_PROHIBITED_FLAG,RESIDUAL_LIKELIHOOD_ID,RESIDUAL_SEVERITY_ID,RESIDUAL_CELL_ID,RESIDUAL_RATING_CODE,RESIDUAL_RESULT_CODE,RESIDUAL_RESULT_NAME,RESIDUAL_PROHIBITED_FLAG,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:id,:taskId,:text,:displayOrder,:initialLikelihoodId,:initialSeverityId,:initialCellId,:initialRatingCode,:initialResultCode,:initialResultName,:initialProhibited,:residualLikelihoodId,:residualSeverityId,:residualCellId,:residualRatingCode,:residualResultCode,:residualResultName,:residualProhibited,:actor,:actor)`,
-            binds,
+            withoutRowVersion(binds),
           );
         for (const control of item.controls) {
           const controlId = controlIds.get(control.ref)!;
@@ -373,7 +422,7 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
           else
             await context.connection.execute(
               `INSERT INTO JSA_VERSION_CONTROL(VERSION_CONTROL_ID,JSA_VERSION_ID,VERSION_HAZARD_ID,LOGICAL_KEY,CONTROL_TEXT,DISPLAY_ORDER,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:hazardId,:id,:text,:displayOrder,:actor,:actor)`,
-              cb,
+              withoutRowVersion(cb),
             );
         }
       }
@@ -391,7 +440,7 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
         versionId: access.versionId,
         rowVersion: item.rowVersion,
         taskId: taskId ?? null,
-        number: item.number ?? null,
+        stepNumber: item.number ?? null,
         text: item.text,
         displayOrder: item.displayOrder,
         noTool: item.noToolRequired ? 'Y' : 'N',
@@ -400,13 +449,13 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
       if (item.id)
         await this.updateOne(
           context,
-          `UPDATE JSA_VERSION_BASIC_STEP SET VERSION_TASK_ID=:taskId,STEP_NUMBER=:number,STEP_TEXT=:text,DISPLAY_ORDER=:displayOrder,NO_TOOL_REQUIRED_FLAG=:noTool,IS_ACTIVE='Y',UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1 WHERE BASIC_STEP_ID=:id AND JSA_VERSION_ID=:versionId AND ROW_VERSION=:rowVersion`,
+          `UPDATE JSA_VERSION_BASIC_STEP SET VERSION_TASK_ID=:taskId,STEP_NUMBER=:stepNumber,STEP_TEXT=:text,DISPLAY_ORDER=:displayOrder,NO_TOOL_REQUIRED_FLAG=:noTool,IS_ACTIVE='Y',UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1 WHERE BASIC_STEP_ID=:id AND JSA_VERSION_ID=:versionId AND ROW_VERSION=:rowVersion`,
           binds,
         );
       else
         await context.connection.execute(
-          `INSERT INTO JSA_VERSION_BASIC_STEP(BASIC_STEP_ID,JSA_VERSION_ID,LOGICAL_KEY,VERSION_TASK_ID,STEP_NUMBER,STEP_TEXT,DISPLAY_ORDER,NO_TOOL_REQUIRED_FLAG,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:id,:taskId,:number,:text,:displayOrder,:noTool,:actor,:actor)`,
-          binds,
+          `INSERT INTO JSA_VERSION_BASIC_STEP(BASIC_STEP_ID,JSA_VERSION_ID,LOGICAL_KEY,VERSION_TASK_ID,STEP_NUMBER,STEP_TEXT,DISPLAY_ORDER,NO_TOOL_REQUIRED_FLAG,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:id,:taskId,:stepNumber,:text,:displayOrder,:noTool,:actor,:actor)`,
+          withoutRowVersion(binds),
         );
       await this.savePositions(context, access.versionId, id, item.performers, 'performer', actor);
       await this.savePositions(
@@ -446,33 +495,66 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
       else
         await context.connection.execute(
           `INSERT INTO JSA_VERSION_PROMPT_COVERAGE(PROMPT_COVERAGE_ID,JSA_VERSION_ID,LOGICAL_KEY,VERSION_PROMPT_ID,VERSION_HAZARD_ID,VERSION_CONTROL_ID,COVERAGE_NOTE,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:id,:promptId,:hazardId,:controlId,:note,:actor,:actor)`,
-          binds,
+          withoutRowVersion(binds),
         );
     }
     for (const item of input.procedureReferences)
       await this.saveProcedure(context, access.versionId, item, actor);
     for (const item of input.attachments) {
       const id = item.id ?? (await this.next(context, 'SEQ_JSA_VER_ATTACHMENT'));
+      const library = await context.connection.execute<Row>(
+        `SELECT V.ORIGINAL_FILE_NAME FILE_NAME,V.CONTENT_TYPE,TO_CHAR(V.FILE_SIZE) FILE_SIZE,
+                V.STORAGE_KEY,V.CONTENT_SHA256,A.DESCRIPTION
+         FROM JSA_ATTACHMENT_ASSET_VERSION V
+         JOIN JSA_ATTACHMENT_ASSET A ON A.ATTACHMENT_ASSET_ID=V.ATTACHMENT_ASSET_ID
+         JOIN JSA_ATTACHMENT_FOLDER F ON F.ATTACHMENT_FOLDER_ID=A.ATTACHMENT_FOLDER_ID
+         WHERE V.ATTACHMENT_ASSET_VERSION_ID=:libraryAssetVersionId
+           AND V.STORAGE_STATUS='STORED' AND A.IS_ACTIVE='Y' AND F.IS_ACTIVE='Y'
+           AND F.SITE_ID=:siteId AND F.RIG_ID=:rigId AND F.DEPARTMENT_ID=:departmentId`,
+        {
+          libraryAssetVersionId: item.libraryAssetVersionId,
+          siteId: access.siteId,
+          rigId: access.rigId,
+          departmentId: access.departmentId,
+        },
+        options,
+      );
+      const source = library.rows?.[0];
+      if (!source)
+        throw new ValidationError(
+          'Selected attachment is unavailable for this JSA Rig and Department',
+        );
       const binds = {
         id,
         versionId: access.versionId,
         rowVersion: item.rowVersion,
-        fileName: item.fileName,
-        contentType: item.contentType ?? null,
-        fileSize: item.fileSize ?? null,
-        description: item.description ?? null,
+        libraryAssetVersionId: item.libraryAssetVersionId,
+        fileName: source.FILE_NAME,
+        contentType: source.CONTENT_TYPE,
+        fileSize: source.FILE_SIZE,
+        storageKey: source.STORAGE_KEY,
+        sha256: source.CONTENT_SHA256,
+        description: source.DESCRIPTION ?? null,
         actor,
       };
       if (item.id)
         await this.updateOne(
           context,
-          `UPDATE JSA_VERSION_ATTACHMENT SET FILE_NAME=:fileName,CONTENT_TYPE=:contentType,FILE_SIZE=:fileSize,DESCRIPTION=:description,IS_ACTIVE='Y',UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1 WHERE VERSION_ATTACHMENT_ID=:id AND JSA_VERSION_ID=:versionId AND ROW_VERSION=:rowVersion`,
+          `UPDATE JSA_VERSION_ATTACHMENT SET LIBRARY_ASSET_VERSION_ID=:libraryAssetVersionId,
+           FILE_NAME=:fileName,CONTENT_TYPE=:contentType,FILE_SIZE=:fileSize,STORAGE_KEY=:storageKey,
+           CONTENT_SHA256=:sha256,ATTACHMENT_STATUS='STORED',DESCRIPTION=:description,IS_ACTIVE='Y',
+           UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1
+           WHERE VERSION_ATTACHMENT_ID=:id AND JSA_VERSION_ID=:versionId AND ROW_VERSION=:rowVersion`,
           binds,
         );
       else
         await context.connection.execute(
-          `INSERT INTO JSA_VERSION_ATTACHMENT(VERSION_ATTACHMENT_ID,JSA_VERSION_ID,LOGICAL_KEY,FILE_NAME,CONTENT_TYPE,FILE_SIZE,DESCRIPTION,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:id,:fileName,:contentType,:fileSize,:description,:actor,:actor)`,
-          binds,
+          `INSERT INTO JSA_VERSION_ATTACHMENT
+           (VERSION_ATTACHMENT_ID,JSA_VERSION_ID,LOGICAL_KEY,LIBRARY_ASSET_VERSION_ID,FILE_NAME,
+            CONTENT_TYPE,FILE_SIZE,STORAGE_KEY,CONTENT_SHA256,ATTACHMENT_STATUS,DESCRIPTION,CREATED_BY,UPDATED_BY)
+           VALUES(:id,:versionId,:id,:libraryAssetVersionId,:fileName,:contentType,:fileSize,:storageKey,
+                  :sha256,'STORED',:description,:actor,:actor)`,
+          withoutRowVersion(binds),
         );
     }
   }
@@ -502,7 +584,21 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
   ): Promise<DraftLoadRecord | undefined> {
     assertOracleId(jsaId, 'jsaId');
     const h = await context.connection.execute<Row>(
-      `SELECT TO_CHAR(M.JSA_ID) JSA_ID,TO_CHAR(V.JSA_VERSION_ID) VERSION_ID,M.JSA_NUMBER,M.LIFECYCLE_STATUS,V.VERSION_STATUS,TO_CHAR(M.OWNER_SITE_ID) OWNER_SITE_ID,TO_CHAR(M.RIG_ID) RIG_ID,TO_CHAR(M.DEPARTMENT_ID) DEPARTMENT_ID,TO_CHAR(V.JOB_TYPE_ID) JOB_TYPE_ID,TO_CHAR(V.MATRIX_VERSION_ID) MATRIX_VERSION_ID,TO_CHAR(V.LANGUAGE_ID) LANGUAGE_ID,V.JOB_TITLE,V.JOB_DESCRIPTION,V.LOCATION_TEXT,V.PERSONNEL_TEXT,V.PTW_REQUIRED_FLAG,V.PTW_REFERENCE,TO_CHAR(M.CREATOR_USER_ID) CREATOR_USER_ID,TO_CHAR(M.ROW_VERSION) ROW_VERSION,TO_CHAR(V.ROW_VERSION) VERSION_ROW_VERSION FROM JSA_MASTER M JOIN JSA_VERSION V ON V.JSA_VERSION_ID=NVL(M.WORKING_VERSION_ID,M.CURRENT_VERSION_ID) WHERE M.JSA_ID=:jsaId`,
+      `SELECT TO_CHAR(M.JSA_ID) JSA_ID,TO_CHAR(V.JSA_VERSION_ID) VERSION_ID,V.VERSION_NUMBER,M.JSA_NUMBER,M.LIFECYCLE_STATUS,V.VERSION_STATUS,
+       TO_CHAR(M.OWNER_SITE_ID) OWNER_SITE_ID,S.SITE_CODE,S.SITE_NAME,
+       TO_CHAR(M.RIG_ID) RIG_ID,R.RIG_CODE,R.RIG_NAME,
+       TO_CHAR(M.DEPARTMENT_ID) DEPARTMENT_ID,D.DEPARTMENT_CODE,D.DEPARTMENT_NAME,
+       TO_CHAR(V.JOB_TYPE_ID) JOB_TYPE_ID,TO_CHAR(V.MATRIX_VERSION_ID) MATRIX_VERSION_ID,TO_CHAR(V.LANGUAGE_ID) LANGUAGE_ID,
+       L.LANGUAGE_CODE,L.LANGUAGE_NAME,TO_CHAR(V.PUBLISHED_AT,'YYYY-MM-DD"T"HH24:MI:SS.FF3') PUBLISHED_AT,
+       V.JOB_TITLE,V.JOB_DESCRIPTION,V.PTW_REQUIRED_FLAG,V.PTW_REFERENCE,
+       TO_CHAR(M.CREATOR_USER_ID) CREATOR_USER_ID,TO_CHAR(M.ROW_VERSION) ROW_VERSION,TO_CHAR(V.ROW_VERSION) VERSION_ROW_VERSION
+       FROM JSA_MASTER M
+       JOIN JSA_VERSION V ON V.JSA_VERSION_ID=NVL(M.WORKING_VERSION_ID,M.CURRENT_VERSION_ID)
+       JOIN SYS_SITE S ON S.SITE_ID=M.OWNER_SITE_ID
+       JOIN SYS_RIG R ON R.RIG_ID=M.RIG_ID AND R.SITE_ID=M.OWNER_SITE_ID
+       JOIN SYS_DEPARTMENT D ON D.DEPARTMENT_ID=M.DEPARTMENT_ID AND D.RIG_ID=M.RIG_ID AND D.SITE_ID=M.OWNER_SITE_ID
+       LEFT JOIN SYS_LANGUAGE L ON L.LANGUAGE_ID=V.LANGUAGE_ID
+       WHERE M.JSA_ID=:jsaId`,
       { jsaId },
       options,
     );
@@ -561,7 +657,11 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
         options,
       ),
       context.connection.execute<Row>(
-        `SELECT TO_CHAR(VERSION_ATTACHMENT_ID) ID,TO_CHAR(LOGICAL_KEY) LOGICAL_KEY,FILE_NAME,CONTENT_TYPE,TO_CHAR(FILE_SIZE) FILE_SIZE,STORAGE_KEY,ATTACHMENT_STATUS,DESCRIPTION,TO_CHAR(ROW_VERSION) ROW_VERSION FROM JSA_VERSION_ATTACHMENT WHERE JSA_VERSION_ID=:versionId AND IS_ACTIVE='Y'`,
+        `SELECT TO_CHAR(VERSION_ATTACHMENT_ID) ID,TO_CHAR(LOGICAL_KEY) LOGICAL_KEY,
+                TO_CHAR(LIBRARY_ASSET_VERSION_ID) LIBRARY_ASSET_VERSION_ID,
+                FILE_NAME,CONTENT_TYPE,TO_CHAR(FILE_SIZE) FILE_SIZE,STORAGE_KEY,
+                ATTACHMENT_STATUS,DESCRIPTION,TO_CHAR(ROW_VERSION) ROW_VERSION
+         FROM JSA_VERSION_ATTACHMENT WHERE JSA_VERSION_ID=:versionId AND IS_ACTIVE='Y'`,
         { versionId },
         options,
       ),
@@ -649,19 +749,27 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
     const header: JsaDraftHeader = {
       jsaId: r.JSA_ID,
       versionId,
+      versionNumber: Number(r.VERSION_NUMBER),
       jsaNumber: r.JSA_NUMBER,
       lifecycleStatus: r.LIFECYCLE_STATUS,
       versionStatus: r.VERSION_STATUS,
       ownerSiteId: r.OWNER_SITE_ID,
+      ownerSiteCode: r.SITE_CODE,
+      ownerSiteName: r.SITE_NAME,
       rigId: r.RIG_ID,
+      rigCode: r.RIG_CODE,
+      rigName: r.RIG_NAME,
       departmentId: r.DEPARTMENT_ID,
-      jobTypeId: r.JOB_TYPE_ID,
+      departmentCode: r.DEPARTMENT_CODE,
+      departmentName: r.DEPARTMENT_NAME,
+      ...(r.JOB_TYPE_ID ? { jobTypeId: r.JOB_TYPE_ID } : {}),
       matrixVersionId: r.MATRIX_VERSION_ID,
-      ...(r.LANGUAGE_ID ? { languageId: r.LANGUAGE_ID } : {}),
+      languageId: r.LANGUAGE_ID,
+      ...(r.LANGUAGE_CODE ? { languageCode: r.LANGUAGE_CODE } : {}),
+      ...(r.LANGUAGE_NAME ? { languageName: r.LANGUAGE_NAME } : {}),
+      ...(r.PUBLISHED_AT ? { publishedAt: r.PUBLISHED_AT } : {}),
       ...(r.JOB_TITLE ? { jobTitle: r.JOB_TITLE } : {}),
       ...(r.JOB_DESCRIPTION ? { jobDescription: String(r.JOB_DESCRIPTION) } : {}),
-      ...(r.LOCATION_TEXT ? { location: r.LOCATION_TEXT } : {}),
-      ...(r.PERSONNEL_TEXT ? { personnel: r.PERSONNEL_TEXT } : {}),
       ptwRequired: r.PTW_REQUIRED_FLAG === 'Y',
       ...(r.PTW_REFERENCE ? { ptwReference: r.PTW_REFERENCE } : {}),
       creatorUserId: r.CREATOR_USER_ID,
@@ -673,6 +781,9 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
       prompts: (pr.rows ?? []).map((x) => ({
         id: x.ID,
         logicalKey: x.LOGICAL_KEY,
+        ...(x.LIBRARY_ASSET_VERSION_ID
+          ? { libraryAssetVersionId: x.LIBRARY_ASSET_VERSION_ID }
+          : {}),
         promptId: x.PROMPT_ID,
         code: x.CODE,
         label: x.LABEL,
@@ -703,17 +814,7 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
         displayOrder: x.DISPLAY_ORDER,
         rowVersion: x.ROW_VERSION,
       })),
-      attachments: (att.rows ?? []).map((x) => ({
-        id: x.ID,
-        logicalKey: x.LOGICAL_KEY,
-        fileName: x.FILE_NAME,
-        ...(x.CONTENT_TYPE ? { contentType: x.CONTENT_TYPE } : {}),
-        ...(x.FILE_SIZE ? { fileSize: x.FILE_SIZE } : {}),
-        ...(x.STORAGE_KEY ? { storageKey: x.STORAGE_KEY } : {}),
-        status: x.ATTACHMENT_STATUS,
-        ...(x.DESCRIPTION ? { description: x.DESCRIPTION } : {}),
-        rowVersion: x.ROW_VERSION,
-      })),
+      attachments: (att.rows ?? []).map(mapDraftAttachmentRow),
     };
   }
 
@@ -757,7 +858,7 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
       else
         await context.connection.execute(
           `INSERT INTO ${table}(${pk},JSA_VERSION_ID,BASIC_STEP_ID,LOGICAL_KEY,POSITION_ID,POSITION_CODE_SNAPSHOT,POSITION_NAME_SNAPSHOT,DISPLAY_ORDER,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:stepId,:id,:sourceId,:code,:name,:displayOrder,:actor,:actor)`,
-          binds,
+          withoutRowVersion(binds),
         );
     }
   }
@@ -796,7 +897,7 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
       else
         await context.connection.execute(
           `INSERT INTO JSA_VER_BASIC_STEP_TOOL(STEP_TOOL_ID,JSA_VERSION_ID,BASIC_STEP_ID,LOGICAL_KEY,TOOL_ID,TOOL_CODE_SNAPSHOT,TOOL_NAME_SNAPSHOT,DISPLAY_ORDER,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:stepId,:id,:sourceId,:code,:name,:displayOrder,:actor,:actor)`,
-          binds,
+          withoutRowVersion(binds),
         );
     }
   }
@@ -847,7 +948,7 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
     else
       await context.connection.execute(
         `INSERT INTO JSA_VERSION_PROCEDURE_REF(VERSION_PROCEDURE_REF_ID,JSA_VERSION_ID,LOGICAL_KEY,PROCEDURE_REFERENCE_ID,REFERENCE_CODE_SNAPSHOT,REFERENCE_TITLE_SNAPSHOT,REVISION_SNAPSHOT,URI_SNAPSHOT,NOTES_TEXT,DISPLAY_ORDER,CREATED_BY,UPDATED_BY) VALUES(:id,:versionId,:id,:sourceId,:code,:title,:revision,:uri,:notes,:displayOrder,:actor,:actor)`,
-        binds,
+        withoutRowVersion(binds),
       );
   }
   private riskBinds(prefix: string, risk?: RiskSnapshot) {
@@ -919,4 +1020,21 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
     );
     return result.rows?.[0]?.ID;
   }
+}
+
+export function mapDraftAttachmentRow(row: Row) {
+  return {
+    id: row.ID,
+    logicalKey: row.LOGICAL_KEY,
+    ...(row.LIBRARY_ASSET_VERSION_ID
+      ? { libraryAssetVersionId: row.LIBRARY_ASSET_VERSION_ID }
+      : {}),
+    fileName: row.FILE_NAME,
+    ...(row.CONTENT_TYPE ? { contentType: row.CONTENT_TYPE } : {}),
+    ...(row.FILE_SIZE ? { fileSize: row.FILE_SIZE } : {}),
+    ...(row.STORAGE_KEY ? { storageKey: row.STORAGE_KEY } : {}),
+    status: row.ATTACHMENT_STATUS,
+    ...(row.DESCRIPTION ? { description: row.DESCRIPTION } : {}),
+    rowVersion: row.ROW_VERSION,
+  };
 }

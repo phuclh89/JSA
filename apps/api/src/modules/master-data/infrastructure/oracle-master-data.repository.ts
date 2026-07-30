@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import type { MasterDataKind, MasterDataRecord, OrganizationOption } from '@jsams/shared-types';
+import type {
+  MasterDataKind,
+  MasterDataRecord,
+  OrganizationKind,
+  OrganizationOption,
+  OrganizationRecord,
+} from '@jsams/shared-types';
 import oracledb from 'oracledb';
 import { assertOracleId } from '../../../common/oracle/oracle-id';
 import type { OracleTransactionContext } from '../../../common/oracle/oracle.types';
@@ -8,6 +14,8 @@ import type {
   MasterDataInput,
   MasterDataListQuery,
   MasterDataPage,
+  OrganizationInput,
+  OrganizationPage,
 } from '../domain/master-data.types';
 
 interface EntityConfig {
@@ -119,6 +127,7 @@ interface MasterRow {
   ROW_VERSION: string;
   [key: string]: unknown;
 }
+type Row = Record<string, any>;
 
 @Injectable()
 export class OracleMasterDataRepository implements MasterDataRepository {
@@ -147,11 +156,7 @@ export class OracleMasterDataRepository implements MasterDataRepository {
       NAME_VALUE: string;
       SITE_ID?: string;
       RIG_ID?: string;
-    }>(
-      statements[type],
-      binds,
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
-    );
+    }>(statements[type], binds, { outFormat: oracledb.OUT_FORMAT_OBJECT });
     return (result.rows ?? []).map((row) => ({
       id: row.ID_VALUE,
       code: row.CODE_VALUE,
@@ -159,6 +164,225 @@ export class OracleMasterDataRepository implements MasterDataRepository {
       ...(row.SITE_ID ? { siteId: row.SITE_ID } : {}),
       ...(row.RIG_ID ? { rigId: row.RIG_ID } : {}),
     }));
+  }
+
+  async listOrganizations(
+    { connection }: OracleTransactionContext,
+    kind: OrganizationKind,
+    query: MasterDataListQuery,
+  ): Promise<OrganizationPage> {
+    const isRig = kind === 'rigs';
+    const where: string[] = ['1=1'];
+    const binds: oracledb.BindParameters = {};
+    const codeColumn = isRig ? 'O.RIG_CODE' : 'O.DEPARTMENT_CODE';
+    const nameColumn = isRig ? 'O.RIG_NAME' : 'O.DEPARTMENT_NAME';
+    if (query.keyword) {
+      where.push(`(UPPER(${codeColumn}) LIKE :keyword OR UPPER(${nameColumn}) LIKE :keyword)`);
+      binds.keyword = `%${query.keyword.toUpperCase()}%`;
+    }
+    if (query.active !== undefined) {
+      where.push('O.IS_ACTIVE=:active');
+      binds.active = query.active ? 'Y' : 'N';
+    }
+    if (query.siteId) {
+      assertOracleId(query.siteId, 'siteId');
+      where.push('O.SITE_ID=:siteId');
+      binds.siteId = query.siteId;
+    }
+    if (!isRig && query.rigId) {
+      assertOracleId(query.rigId, 'rigId');
+      where.push('O.RIG_ID=:rigId');
+      binds.rigId = query.rigId;
+    }
+    const table = isRig ? 'SYS_RIG' : 'SYS_DEPARTMENT';
+    const count = await connection.execute<{ TOTAL_COUNT: number }>(
+      `SELECT COUNT(*) TOTAL_COUNT FROM ${table} O WHERE ${where.join(' AND ')}`,
+      binds,
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const pageBinds = {
+      ...binds,
+      offsetRows: (query.page - 1) * query.pageSize,
+      fetchRows: query.pageSize,
+    };
+    const result = await connection.execute<Row>(
+      isRig
+        ? `SELECT TO_CHAR(O.RIG_ID) ID_VALUE,O.RIG_CODE CODE_VALUE,O.RIG_NAME NAME_VALUE,
+                  TO_CHAR(O.SITE_ID) SITE_ID,S.SITE_CODE,S.SITE_NAME,
+                  NULL RIG_ID,NULL PARENT_RIG_CODE,NULL PARENT_RIG_NAME,
+                  O.IS_ACTIVE,TO_CHAR(O.ROW_VERSION) ROW_VERSION
+           FROM SYS_RIG O
+           JOIN SYS_SITE S ON S.SITE_ID=O.SITE_ID
+           WHERE ${where.join(' AND ')}
+           ORDER BY O.RIG_NAME,O.RIG_ID
+           OFFSET :offsetRows ROWS FETCH NEXT :fetchRows ROWS ONLY`
+        : `SELECT TO_CHAR(O.DEPARTMENT_ID) ID_VALUE,O.DEPARTMENT_CODE CODE_VALUE,
+                  O.DEPARTMENT_NAME NAME_VALUE,TO_CHAR(O.SITE_ID) SITE_ID,S.SITE_CODE,S.SITE_NAME,
+                  TO_CHAR(O.RIG_ID) RIG_ID,R.RIG_CODE PARENT_RIG_CODE,R.RIG_NAME PARENT_RIG_NAME,
+                  O.IS_ACTIVE,TO_CHAR(O.ROW_VERSION) ROW_VERSION
+           FROM SYS_DEPARTMENT O
+           JOIN SYS_SITE S ON S.SITE_ID=O.SITE_ID
+           LEFT JOIN SYS_RIG R ON R.RIG_ID=O.RIG_ID AND R.SITE_ID=O.SITE_ID
+           WHERE ${where.join(' AND ')}
+           ORDER BY O.DEPARTMENT_NAME,O.DEPARTMENT_ID
+           OFFSET :offsetRows ROWS FETCH NEXT :fetchRows ROWS ONLY`,
+      pageBinds,
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    return {
+      items: (result.rows ?? []).map((row) => this.mapOrganization(kind, row)),
+      page: query.page,
+      pageSize: query.pageSize,
+      total: count.rows?.[0]?.TOTAL_COUNT ?? 0,
+    };
+  }
+
+  async findOrganizationById(
+    { connection }: OracleTransactionContext,
+    kind: OrganizationKind,
+    id: string,
+  ): Promise<OrganizationRecord | undefined> {
+    assertOracleId(id);
+    const result = await connection.execute<Row>(
+      kind === 'rigs'
+        ? `SELECT TO_CHAR(O.RIG_ID) ID_VALUE,O.RIG_CODE CODE_VALUE,O.RIG_NAME NAME_VALUE,
+                  TO_CHAR(O.SITE_ID) SITE_ID,S.SITE_CODE,S.SITE_NAME,
+                  NULL RIG_ID,NULL PARENT_RIG_CODE,NULL PARENT_RIG_NAME,
+                  O.IS_ACTIVE,TO_CHAR(O.ROW_VERSION) ROW_VERSION
+           FROM SYS_RIG O JOIN SYS_SITE S ON S.SITE_ID=O.SITE_ID WHERE O.RIG_ID=:id`
+        : `SELECT TO_CHAR(O.DEPARTMENT_ID) ID_VALUE,O.DEPARTMENT_CODE CODE_VALUE,
+                  O.DEPARTMENT_NAME NAME_VALUE,TO_CHAR(O.SITE_ID) SITE_ID,S.SITE_CODE,S.SITE_NAME,
+                  TO_CHAR(O.RIG_ID) RIG_ID,R.RIG_CODE PARENT_RIG_CODE,R.RIG_NAME PARENT_RIG_NAME,
+                  O.IS_ACTIVE,TO_CHAR(O.ROW_VERSION) ROW_VERSION
+           FROM SYS_DEPARTMENT O
+           JOIN SYS_SITE S ON S.SITE_ID=O.SITE_ID
+           LEFT JOIN SYS_RIG R ON R.RIG_ID=O.RIG_ID AND R.SITE_ID=O.SITE_ID
+           WHERE O.DEPARTMENT_ID=:id`,
+      { id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    return result.rows?.[0] ? this.mapOrganization(kind, result.rows[0]) : undefined;
+  }
+
+  async validateOrganizationParent(
+    { connection }: OracleTransactionContext,
+    kind: OrganizationKind,
+    input: OrganizationInput,
+  ): Promise<boolean> {
+    assertOracleId(input.siteId, 'siteId');
+    if (input.rigId) assertOracleId(input.rigId, 'rigId');
+    const result = await connection.execute<{ VALID_COUNT: number }>(
+      kind === 'rigs'
+        ? `SELECT COUNT(*) VALID_COUNT FROM SYS_SITE
+           WHERE SITE_ID=:siteId AND IS_ACTIVE='Y'`
+        : `SELECT COUNT(*) VALID_COUNT
+           FROM SYS_RIG R JOIN SYS_SITE S ON S.SITE_ID=R.SITE_ID
+           WHERE R.RIG_ID=:rigId AND R.SITE_ID=:siteId
+             AND R.IS_ACTIVE='Y' AND S.IS_ACTIVE='Y'`,
+      kind === 'rigs' ? { siteId: input.siteId } : { siteId: input.siteId, rigId: input.rigId },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    return result.rows?.[0]?.VALID_COUNT === 1;
+  }
+
+  async createOrganization(
+    context: OracleTransactionContext,
+    kind: OrganizationKind,
+    input: OrganizationInput,
+    actor: string,
+  ): Promise<OrganizationRecord> {
+    const sequence = kind === 'rigs' ? 'SEQ_SYS_RIG' : 'SEQ_SYS_DEPARTMENT';
+    const id = await context.connection.execute<{ ID_VALUE: string }>(
+      `SELECT TO_CHAR(${sequence}.NEXTVAL) ID_VALUE FROM DUAL`,
+      {},
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const organizationId = id.rows?.[0]?.ID_VALUE ?? '';
+    if (kind === 'rigs') {
+      await context.connection.execute(
+        `INSERT INTO SYS_RIG(
+           RIG_ID,SITE_ID,RIG_CODE,RIG_NAME,CREATED_SITE_ID,UPDATED_SITE_ID,CREATED_BY,UPDATED_BY
+         ) VALUES(:id,:siteId,:code,:name,:siteId,:siteId,:actor,:actor)`,
+        {
+          id: organizationId,
+          siteId: input.siteId,
+          code: input.code.trim().toUpperCase(),
+          name: input.name.trim(),
+          actor,
+        },
+      );
+    } else {
+      await context.connection.execute(
+        `INSERT INTO SYS_DEPARTMENT(
+           DEPARTMENT_ID,SITE_ID,RIG_ID,DEPARTMENT_CODE,DEPARTMENT_NAME,
+           CREATED_SITE_ID,UPDATED_SITE_ID,CREATED_BY,UPDATED_BY
+         ) VALUES(:id,:siteId,:rigId,:code,:name,:siteId,:siteId,:actor,:actor)`,
+        {
+          id: organizationId,
+          siteId: input.siteId,
+          rigId: input.rigId,
+          code: input.code.trim().toUpperCase(),
+          name: input.name.trim(),
+          actor,
+        },
+      );
+    }
+    return (await this.findOrganizationById(context, kind, organizationId))!;
+  }
+
+  async updateOrganization(
+    context: OracleTransactionContext,
+    kind: OrganizationKind,
+    id: string,
+    input: OrganizationInput,
+    rowVersion: string,
+    actor: string,
+  ): Promise<OrganizationRecord | undefined> {
+    assertOracleId(id);
+    assertOracleId(rowVersion, 'rowVersion');
+    const result = await context.connection.execute(
+      kind === 'rigs'
+        ? `UPDATE SYS_RIG
+           SET RIG_CODE=:code,RIG_NAME=:name,UPDATED_SITE_ID=:siteId,
+               UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1
+           WHERE RIG_ID=:id AND SITE_ID=:siteId AND ROW_VERSION=:rowVersion`
+        : `UPDATE SYS_DEPARTMENT
+           SET DEPARTMENT_CODE=:code,DEPARTMENT_NAME=:name,UPDATED_SITE_ID=:siteId,
+               UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1
+           WHERE DEPARTMENT_ID=:id AND SITE_ID=:siteId AND RIG_ID=:rigId
+             AND ROW_VERSION=:rowVersion`,
+      {
+        id,
+        siteId: input.siteId,
+        ...(kind === 'departments' ? { rigId: input.rigId } : {}),
+        code: input.code.trim().toUpperCase(),
+        name: input.name.trim(),
+        actor,
+        rowVersion,
+      },
+    );
+    return result.rowsAffected === 1 ? this.findOrganizationById(context, kind, id) : undefined;
+  }
+
+  async setOrganizationActive(
+    context: OracleTransactionContext,
+    kind: OrganizationKind,
+    id: string,
+    active: boolean,
+    rowVersion: string,
+    actor: string,
+  ): Promise<OrganizationRecord | undefined> {
+    assertOracleId(id);
+    assertOracleId(rowVersion, 'rowVersion');
+    const table = kind === 'rigs' ? 'SYS_RIG' : 'SYS_DEPARTMENT';
+    const idColumn = kind === 'rigs' ? 'RIG_ID' : 'DEPARTMENT_ID';
+    const result = await context.connection.execute(
+      `UPDATE ${table}
+       SET IS_ACTIVE=:active,UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1
+       WHERE ${idColumn}=:id AND ROW_VERSION=:rowVersion`,
+      { active: active ? 'Y' : 'N', actor, id, rowVersion },
+    );
+    return result.rowsAffected === 1 ? this.findOrganizationById(context, kind, id) : undefined;
   }
   async list(
     { connection }: OracleTransactionContext,
@@ -385,6 +609,23 @@ export class OracleMasterDataRepository implements MasterDataRepository {
       active: row.IS_ACTIVE === 'Y',
       rowVersion: row.ROW_VERSION,
       attributes,
+    };
+  }
+
+  private mapOrganization(kind: OrganizationKind, row: Row): OrganizationRecord {
+    return {
+      id: row.ID_VALUE,
+      kind,
+      code: row.CODE_VALUE,
+      name: row.NAME_VALUE,
+      siteId: row.SITE_ID,
+      siteCode: row.SITE_CODE,
+      siteName: row.SITE_NAME,
+      ...(row.RIG_ID ? { rigId: row.RIG_ID } : {}),
+      ...(row.PARENT_RIG_CODE ? { rigCode: row.PARENT_RIG_CODE } : {}),
+      ...(row.PARENT_RIG_NAME ? { rigName: row.PARENT_RIG_NAME } : {}),
+      active: row.IS_ACTIVE === 'Y',
+      rowVersion: row.ROW_VERSION,
     };
   }
 

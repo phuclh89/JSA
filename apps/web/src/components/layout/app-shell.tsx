@@ -1,4 +1,4 @@
-import { FileAddOutlined, MenuOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons';
+import { FileAddOutlined, FileTextOutlined, MenuOutlined, UserOutlined } from '@ant-design/icons';
 import {
   Avatar,
   Badge,
@@ -15,6 +15,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { navigationItems } from '../../app/navigation';
+import pvDrillingLogo from '../../assets/pv-drilling-logo.png';
 import { useAuth } from '../../features/auth/auth-context';
 import './app-shell.css';
 import { jsaApi } from '../../features/jsa/jsa-api';
@@ -26,11 +27,90 @@ export function AppShell() {
   const location = useLocation();
   const { user, logout } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const jsaCapabilities = useQuery({ queryKey: ['jsa-capabilities'], queryFn: jsaApi.capabilities });
-  const workflowCapabilities = useQuery({queryKey:['workflow-capabilities'],queryFn:workflowApi.capabilities});
+  const jsaCapabilities = useQuery({
+    queryKey: ['jsa-capabilities'],
+    queryFn: jsaApi.capabilities,
+  });
+  const workflowCapabilities = useQuery({
+    queryKey: ['workflow-capabilities'],
+    queryFn: workflowApi.capabilities,
+  });
   const items = useMemo(
-    () => [...navigationItems.filter((item) => user?.permissions.includes(item.permission)),...(jsaCapabilities.data?.create?[{key:'/jsa/new',label:'Create JSA',permission:'',area:'browse' as const,icon:<FileAddOutlined/>}]:[]),...(workflowCapabilities.data?.view?[{key:'/jsa/approvals',label:'Needs Approval',permission:'',area:'browse' as const,icon:<FileAddOutlined/>},{key:'/jsa/pending',label:'Pending Approval',permission:'',area:'browse' as const,icon:<FileAddOutlined/>},{key:'/jsa/rejected',label:'Rejected JSA',permission:'',area:'browse' as const,icon:<FileAddOutlined/>},{key:'/jsa/published',label:'Published JSA',permission:'',area:'browse' as const,icon:<FileAddOutlined/>}]:[]),...(workflowCapabilities.data?.admin?[{key:'/operations/workflow',label:'Approval Workflow',permission:'',area:'operations' as const,icon:<FileAddOutlined/>}]:[])],
-    [user, jsaCapabilities.data?.create,workflowCapabilities.data?.view,workflowCapabilities.data?.admin],
+    () => [
+      ...navigationItems.filter((item) => user?.permissions.includes(item.permission)),
+      ...(jsaCapabilities.data?.view
+        ? [
+            {
+              key: '/jsa/drafts',
+              label: 'My Drafts',
+              permission: '',
+              area: 'browse' as const,
+              icon: <FileTextOutlined />,
+            },
+          ]
+        : []),
+      ...(jsaCapabilities.data?.create
+        ? [
+            {
+              key: '/jsa/new',
+              label: 'Create JSA',
+              permission: '',
+              area: 'browse' as const,
+              icon: <FileAddOutlined />,
+            },
+          ]
+        : []),
+      ...(workflowCapabilities.data?.view
+        ? [
+            {
+              key: '/jsa/approvals',
+              label: 'Needs Approval',
+              permission: '',
+              area: 'browse' as const,
+              icon: <FileAddOutlined />,
+            },
+            {
+              key: '/jsa/pending',
+              label: 'Pending Approval',
+              permission: '',
+              area: 'browse' as const,
+              icon: <FileAddOutlined />,
+            },
+            {
+              key: '/jsa/rejected',
+              label: 'Rejected JSA',
+              permission: '',
+              area: 'browse' as const,
+              icon: <FileAddOutlined />,
+            },
+            {
+              key: '/jsa/published',
+              label: 'Published JSA',
+              permission: '',
+              area: 'browse' as const,
+              icon: <FileAddOutlined />,
+            },
+          ]
+        : []),
+      ...(workflowCapabilities.data?.admin
+        ? [
+            {
+              key: '/operations/workflow',
+              label: 'Approval Workflow',
+              permission: '',
+              area: 'operations' as const,
+              icon: <FileAddOutlined />,
+            },
+          ]
+        : []),
+    ],
+    [
+      user,
+      jsaCapabilities.data?.view,
+      jsaCapabilities.data?.create,
+      workflowCapabilities.data?.view,
+      workflowCapabilities.data?.admin,
+    ],
   );
   const area = location.pathname.startsWith('/operations') ? 'operations' : 'browse';
   const menu = (
@@ -55,7 +135,7 @@ export function AppShell() {
             icon={<MenuOutlined />}
             onClick={() => setDrawerOpen(true)}
           />
-          <SafetyCertificateOutlined className="brand-icon" />
+          <img className="app-brand-logo" src={pvDrillingLogo} alt="PV Drilling logo" />
           <Typography.Title level={4}>JSAMS</Typography.Title>
           <Badge color="orange" text={`${import.meta.env.MODE.toUpperCase()} ENVIRONMENT`} />
         </Space>
@@ -63,7 +143,7 @@ export function AppShell() {
           menu={{
             items: [
               { key: 'profile', label: user?.displayName },
-              { key: 'logout', label: 'Sign out', onClick: logout },
+              { key: 'logout', label: 'Sign out', onClick: () => void logout() },
             ],
           }}
         >

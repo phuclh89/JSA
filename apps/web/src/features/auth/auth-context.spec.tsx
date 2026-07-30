@@ -27,7 +27,7 @@ describe('session bootstrap', () => {
           permissions: [],
           permissionOverrides: [],
           dataScopes: [],
-          authentication: { mode: 'oidc' },
+          authentication: { mode: 'ldap' },
         }),
       }),
     );

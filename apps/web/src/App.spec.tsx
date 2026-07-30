@@ -44,6 +44,7 @@ it('renders the application shell', async () => {
     expect(screen.getByRole('heading', { name: 'System Health' })).toBeInTheDocument(),
   );
   expect(screen.getByText('JSAMS')).toBeInTheDocument();
+  expect(screen.getByRole('img', { name: 'PV Drilling logo' })).toBeInTheDocument();
 });
 
 it('hides forbidden navigation and denies a direct route', async () => {

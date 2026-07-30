@@ -8,8 +8,117 @@
 .workflow-page > .ant-typography {
   margin-bottom: 0;
 }
+.workflow-page .approval-progress {
+  margin-bottom: 0;
+}
+.my-drafts-card {
+  min-width: 0;
+  min-height: 360px;
+}
+.my-drafts-card > .ant-card-body {
+  min-width: 0;
+}
+.my-drafts-feedback {
+  min-height: 300px;
+  display: grid;
+  place-items: center;
+}
+.my-drafts-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+}
+.my-drafts-table {
+  min-width: 1120px;
+}
+.my-drafts-table .ant-table {
+  contain: layout paint;
+}
+.my-drafts-table .ant-table-cell {
+  overflow-wrap: anywhere;
+}
+.my-drafts-table .ant-btn {
+  transform: none;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+.workflow-action-card {
+  position: sticky;
+  top: 8px;
+  z-index: 10;
+  box-shadow: var(--color-border) 0 0 0 1px;
+}
+.workflow-worksheet-section {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-standard);
+  background: var(--color-surface);
+}
+.workflow-worksheet-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.workflow-worksheet-heading h2 {
+  margin: 0 0 4px;
+}
+.approval-history {
+  min-width: 0;
+}
+.approval-history .ant-card-body {
+  padding-block-end: 8px;
+}
+.approval-history-entry {
+  display: grid;
+  gap: 6px;
+  color: var(--color-near-black);
+}
+.approval-history-entry header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.approval-history-entry time,
+.approval-history-transition {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+.approval-history-transition {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.approval-history-entry blockquote {
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  color: var(--color-near-black);
+  border-left: 3px solid var(--color-warning);
+  background: var(--color-page-surface);
+  overflow-wrap: anywhere;
+}
 @media (max-width: 720px) {
   .workflow-page {
     padding: 16px;
+  }
+  .workflow-action-card {
+    position: static;
+  }
+  .workflow-worksheet-section {
+    padding: 12px;
+  }
+  .my-drafts-card > .ant-card-body {
+    padding: 12px;
+  }
+  .approval-history-entry header,
+  .approval-history-transition {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

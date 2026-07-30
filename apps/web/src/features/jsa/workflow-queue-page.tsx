@@ -34,7 +34,10 @@ export function WorkflowQueuePage({ kind }: { kind: keyof typeof labels }) {
             dataSource={query.data ?? []}
             pagination={{ pageSize: 20 }}
             columns={[
-              { title: 'JSA Number', dataIndex: 'jsaNumber' },
+              {
+                title: kind === 'published' ? 'Official Number' : 'Temporary Number',
+                dataIndex: 'jsaNumber',
+              },
               { title: 'Job', dataIndex: 'jobTitle', render: (v) => v || '—' },
               { title: 'Status', dataIndex: 'versionStatus', render: (v) => <Tag>{v}</Tag> },
               { title: 'Current step', dataIndex: 'currentStepName', render: (v) => v || '—' },
@@ -51,6 +54,16 @@ export function WorkflowQueuePage({ kind }: { kind: keyof typeof labels }) {
                     <Button onClick={() => navigate(`/jsa/${r.jsaId}/draft`)}>
                       {kind === 'published' ? 'View JSA' : 'Open JSA'}
                     </Button>
+                    {kind === 'published' ? (
+                      <Button
+                        type="primary"
+                        onClick={() =>
+                          window.open(`/jsa/${r.jsaId}/print`, '_blank', 'noopener,noreferrer')
+                        }
+                      >
+                        Print
+                      </Button>
+                    ) : null}
                   </Space>
                 ),
               },

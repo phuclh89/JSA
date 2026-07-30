@@ -8,17 +8,38 @@ import { MasterDataPage } from '../../features/administration/master-data-page';
 import { RiskMatricesPage } from '../../features/administration/risk-matrices-page';
 import { RiskMatrixEditor } from '../../features/administration/risk-matrix-editor';
 import { RigMatrixAssignmentsPage } from '../../features/administration/rig-matrix-assignments-page';
+import { OrganizationPage } from '../../features/administration/organization-page';
 import { JsaCreatePage } from '../../features/jsa/jsa-create-page';
 import { JsaDraftEditor } from '../../features/jsa/jsa-draft-editor';
+import { JsaPrintPage } from '../../features/jsa/jsa-print-page';
+import { MyDraftsPage } from '../../features/jsa/my-drafts-page';
 import { JsaCapabilityRoute } from '../../features/jsa/jsa-capability-route';
 import { WorkflowCapabilityRoute } from '../../features/jsa/workflow-capability-route';
 import { WorkflowQueuePage } from '../../features/jsa/workflow-queue-page';
 import { WorkflowReviewPage } from '../../features/jsa/workflow-review-page';
 import { WorkflowConfigPage } from '../../features/administration/workflow-config-page';
+import { AccessUsersPage } from '../../features/administration/access-users-page';
+import { AccessUserDetailPage } from '../../features/administration/access-user-detail-page';
+import { AccessRolesPage } from '../../features/administration/access-roles-page';
+import { AccessDiagnosticsPage } from '../../features/administration/access-diagnostics-page';
+import { AccessAuditPage } from '../../features/administration/access-audit-page';
+import { AttachmentLibraryPage } from '../../features/administration/attachment-library-page';
+import { LoginPage } from '../../features/auth/login-page';
 export function AppRouter() {
   return (
     <Routes>
+      <Route path="/login" element={<LoginPage />} />
       <Route path="/access-denied" element={<AccessDeniedPage />} />
+      <Route
+        path="/jsa/:id/print"
+        element={
+          <AuthenticatedRoute>
+            <JsaCapabilityRoute capability="view">
+              <JsaPrintPage />
+            </JsaCapabilityRoute>
+          </AuthenticatedRoute>
+        }
+      />
       <Route
         element={
           <AuthenticatedRoute>
@@ -27,6 +48,14 @@ export function AppRouter() {
         }
       >
         <Route index element={<Navigate to="/browse" replace />} />
+        <Route
+          path="/operations/attachment-library"
+          element={
+            <PermissionRoute permission="ATTACHMENT_LIBRARY_ADMIN">
+              <AttachmentLibraryPage />
+            </PermissionRoute>
+          }
+        />
         <Route
           path="/browse"
           element={
@@ -45,19 +74,68 @@ export function AppRouter() {
         />
         <Route
           path="/jsa/new"
-          element={<JsaCapabilityRoute capability="create"><JsaCreatePage /></JsaCapabilityRoute>}
+          element={
+            <JsaCapabilityRoute capability="create">
+              <JsaCreatePage />
+            </JsaCapabilityRoute>
+          }
+        />
+        <Route
+          path="/jsa/drafts"
+          element={
+            <JsaCapabilityRoute capability="view">
+              <MyDraftsPage />
+            </JsaCapabilityRoute>
+          }
         />
         <Route
           path="/jsa/:id/draft"
-          element={<JsaCapabilityRoute capability="view"><JsaDraftEditor /></JsaCapabilityRoute>}
+          element={
+            <JsaCapabilityRoute capability="view">
+              <JsaDraftEditor />
+            </JsaCapabilityRoute>
+          }
         />
-        {(['approvals','pending','rejected','published'] as const).map(kind=><Route key={kind} path={`/jsa/${kind}`} element={<WorkflowCapabilityRoute capability="view"><WorkflowQueuePage kind={kind}/></WorkflowCapabilityRoute>}/>)}
-        <Route path="/jsa/:id/workflow" element={<WorkflowCapabilityRoute capability="view"><WorkflowReviewPage/></WorkflowCapabilityRoute>}/>
+        {(['approvals', 'pending', 'rejected', 'published'] as const).map((kind) => (
+          <Route
+            key={kind}
+            path={`/jsa/${kind}`}
+            element={
+              <WorkflowCapabilityRoute capability="view">
+                <WorkflowQueuePage kind={kind} />
+              </WorkflowCapabilityRoute>
+            }
+          />
+        ))}
+        <Route
+          path="/jsa/:id/workflow"
+          element={
+            <WorkflowCapabilityRoute capability="view">
+              <WorkflowReviewPage />
+            </WorkflowCapabilityRoute>
+          }
+        />
         <Route
           path="/operations/security"
           element={
             <PermissionRoute permission="SYSTEM_ADMIN">
               <SecurityFoundationPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/operations/rigs"
+          element={
+            <PermissionRoute permission="SYSTEM_ADMIN">
+              <OrganizationPage kind="rigs" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/operations/departments"
+          element={
+            <PermissionRoute permission="SYSTEM_ADMIN">
+              <OrganizationPage kind="departments" />
             </PermissionRoute>
           }
         />
@@ -107,7 +185,62 @@ export function AppRouter() {
             </PermissionRoute>
           }
         />
-        <Route path="/operations/workflow" element={<WorkflowCapabilityRoute capability="admin"><WorkflowConfigPage/></WorkflowCapabilityRoute>}/>
+        <Route
+          path="/operations/workflow"
+          element={
+            <WorkflowCapabilityRoute capability="admin">
+              <WorkflowConfigPage />
+            </WorkflowCapabilityRoute>
+          }
+        />
+        <Route
+          path="/operations/access/users"
+          element={
+            <PermissionRoute permission="SYSTEM_ADMIN">
+              <AccessUsersPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/operations/access/users/:userId"
+          element={
+            <PermissionRoute permission="SYSTEM_ADMIN">
+              <AccessUserDetailPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/operations/access/roles"
+          element={
+            <PermissionRoute permission="SYSTEM_ADMIN">
+              <AccessRolesPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/operations/access/approver-resolution"
+          element={
+            <PermissionRoute permission="SYSTEM_ADMIN">
+              <AccessDiagnosticsPage mode="approvers" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/operations/access/uat-readiness"
+          element={
+            <PermissionRoute permission="SYSTEM_ADMIN">
+              <AccessDiagnosticsPage mode="readiness" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/operations/access/audit"
+          element={
+            <PermissionRoute permission="SYSTEM_ADMIN">
+              <AccessAuditPage />
+            </PermissionRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

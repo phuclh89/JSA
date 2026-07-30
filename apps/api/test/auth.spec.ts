@@ -31,6 +31,7 @@ describe('authorization foundation', () => {
       identityKey: 'admin',
       username: 'admin',
       mode: 'development',
+      allowUsernameFallback: true,
     });
     expect(target.request.user).toBe(resolved);
   });
@@ -44,17 +45,18 @@ describe('authorization foundation', () => {
     await expect(guard.canActivate(context().context as never)).rejects.toThrow('Authentication');
   });
 
-  it('validates OIDC claims and resolves the stable enterprise identity', async () => {
+  it('validates an LDAP session and resolves the stable enterprise identity', async () => {
     const users = { resolve: jest.fn().mockResolvedValue({ userId: '2' }) };
-    const tokens = {
-      validate: jest.fn().mockResolvedValue({
-        oid: 'stable-object-id',
-        preferred_username: 'user@example.test',
-        exp: 2_000_000_000,
+    const sessions = {
+      verify: jest.fn().mockResolvedValue({
+        identityKey: 'ad-object-guid:stable-object-id',
+        username: 'user',
+        mode: 'ldap',
+        sessionExpiresAt: '2033-05-18T03:33:20.000Z',
       }),
     };
     const request = {
-      header: (name: string) => (name === 'authorization' ? 'Bearer signed-token' : undefined),
+      header: (name: string) => (name === 'cookie' ? 'jsams_session=signed-session' : undefined),
     };
     const execution = {
       switchToHttp: () => ({ getRequest: () => request }),
@@ -62,17 +64,17 @@ describe('authorization foundation', () => {
       getClass: () => 'class',
     };
     const guard = new EnterpriseAuthGuard(
-      { getOrThrow: () => 'oidc', get: () => 'production' } as never,
+      { getOrThrow: () => 'ldap', get: () => 'production' } as never,
       users as never,
-      tokens as never,
+      sessions as never,
     );
     await expect(guard.canActivate(execution as never)).resolves.toBe(true);
-    expect(tokens.validate).toHaveBeenCalledWith('signed-token');
+    expect(sessions.verify).toHaveBeenCalledWith('jsams_session=signed-session');
     expect(users.resolve).toHaveBeenCalledWith(
       expect.objectContaining({
-        identityKey: 'stable-object-id',
-        username: 'user@example.test',
-        mode: 'oidc',
+        identityKey: 'ad-object-guid:stable-object-id',
+        username: 'user',
+        mode: 'ldap',
       }),
     );
   });

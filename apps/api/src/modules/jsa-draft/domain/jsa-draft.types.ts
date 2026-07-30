@@ -2,20 +2,11 @@ export interface CreateDraftInput {
   ownerSiteId: string;
   rigId: string;
   departmentId: string;
-  jobTypeId: string;
-  languageId?: string;
 }
 export interface UpdateDraftHeaderInput {
   rowVersion: string;
   versionRowVersion: string;
   jobTitle?: string;
-  jobDescription?: string;
-  location?: string;
-  personnel?: string;
-  ptwRequired?: boolean;
-  ptwReference?: string;
-  jobTypeId: string;
-  languageId?: string;
 }
 export interface RiskInput {
   likelihoodId?: string;
@@ -109,10 +100,7 @@ export interface AttachmentInput {
   ref: string;
   id?: string;
   rowVersion?: string;
-  fileName: string;
-  contentType?: string;
-  fileSize?: string;
-  description?: string;
+  libraryAssetVersionId: string;
 }
 export interface SaveDraftContentInput {
   versionRowVersion: string;
@@ -123,6 +111,8 @@ export interface SaveDraftContentInput {
   procedureReferences: ProcedureInput[];
   attachments: AttachmentInput[];
 }
+export type SaveDraftInput = UpdateDraftHeaderInput &
+  Omit<SaveDraftContentInput, 'versionRowVersion'>;
 export interface DraftAccessRecord {
   jsaId: string;
   versionId: string;

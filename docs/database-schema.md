@@ -59,9 +59,33 @@ Sequence: `SEQ_SYS_SITE_SEQ_RANGE`.
 
 ### `SYS_USER`
 
-Application mapping for an enterprise identity; no password column exists. Columns: `USER_ID NUMBER(19)`, `ENTERPRISE_IDENTITY_KEY VARCHAR2(255 CHAR)`, `USERNAME VARCHAR2(255 CHAR)`, `DISPLAY_NAME VARCHAR2(255 CHAR)`, nullable `EMAIL VARCHAR2(320 CHAR)`, nullable default site/rig/department IDs, created/updated site IDs, and standard mutable columns. Stable identity key and username are individually unique. Composite foreign keys enforce default rig/site and department/site consistency. `IX_SYS_USER_DEFAULTS` supports default-context lookup.
+JSAMS application-user mapping for an enterprise identity; this is an internal authorization record, not a local-login account. Actual columns are `USER_ID NUMBER(19)`, `ENTERPRISE_IDENTITY_KEY VARCHAR2(255 CHAR)`, `USERNAME VARCHAR2(255 CHAR)`, `DISPLAY_NAME VARCHAR2(255 CHAR)`, nullable `EMAIL VARCHAR2(320 CHAR)`, nullable default site/rig/department IDs, created/updated site IDs, and the standard mutable columns including `IS_ACTIVE` and `ROW_VERSION`.
+
+- `USER_ID` is the internal Oracle primary key and is exposed as a decimal string.
+- `ENTERPRISE_IDENTITY_KEY` stores the stable external identity-provider key. Under the current Active Directory LDAP integration, the preferred value is `ad-object-guid:<canonical objectGUID>`. It is the unique preferred directory-to-application link; username fallback is permitted only as an explicitly configured migration aid and is not a replacement stable key.
+- `USERNAME` stores the unique canonical enterprise username used operationally, for example `phuclh`.
+- `DISPLAY_NAME` and `EMAIL` are profile/display metadata. They are neither interchangeable with `USERNAME` nor stable identity keys.
+- `IS_ACTIVE` enables or blocks JSAMS application access only; it does not modify the enterprise identity or Active Directory account.
+- Default Site/Rig/Department fields describe normal application context and do not themselves grant data scope.
+
+Composite foreign keys enforce default rig/site and department/site consistency. `IX_SYS_USER_DEFAULTS` supports default-context lookup. The current table already has an immutable-identity equivalent in `ENTERPRISE_IDENTITY_KEY`; therefore no missing immutable-ID column is claimed. It has no separate identity-provider or last-login column, and this documentation does not invent either.
+
+No password-bearing column is permitted under the approved enterprise-identity architecture, including `PASSWORD`, `PASSWORD_HASH`, `PASSWORD_SALT`, `PASSWORD_RESET_TOKEN`, `LOCAL_PASSWORD`, `FAILED_PASSWORD`, or `PASSWORD_EXPIRY`. Adding any such field would require a future explicitly approved architecture that supersedes the current model and a new migration; applied migration 002 must not be edited.
 
 Sequence: `SEQ_SYS_USER`.
+
+The authorization relationships remain separate:
+
+```text
+SYS_USER
+  -> SYS_USER_ROLE
+       -> SYS_ROLE_PERMISSION
+  -> SYS_USER_PERMISSION_OVERRIDE
+  -> SYS_USER_DATA_SCOPE
+  -> JSA_WF_ROLE_ASSIGNMENT
+```
+
+`JSA_WORKFLOW_TASK.ASSIGNEE_USER_ID` identifies the current workflow assignee separately from workflow-role eligibility. Identity, role, permission, override, data scope, workflow role, and current assignment must not be collapsed into `SYS_USER`.
 
 ### `SYS_ROLE`
 
@@ -126,6 +150,8 @@ Master-data codes are case-insensitively unique among active records inside thei
 
 No production master-data rows are seeded. Job types, prompts, positions, tools, languages, procedure references, parameter keys/values, and their ownership scopes require approved operational input.
 
+The configured development Oracle database contains the confirmed 25-item PV Drilling Hazard Assessment Prompt checklist at Rig scope for `DEV-RIG` (`RIG_ID=1000000`). The prior global development fixtures `ENERGY`, `DROPPED`, and `PINCH` are inactive rather than deleted so historical JSA prompt snapshots remain interpretable.
+
 ## Phase 2 Risk Matrix model
 
 - `JSA_RISK_MATRIX` is the stable Matrix identity and fixes the dimension at 3 or 5.
@@ -141,21 +167,44 @@ Configuration remains editable only while a Matrix Version has never been assign
 
 Migration 004 creates 15 sequences for its 15 tables. `db:bootstrap:phase2` only configures those allowlisted sequences from the already-approved local Phase 1 range; it does not insert business data. GoldenGate must preserve all source IDs and must not replicate sequence state.
 
+The configured development Oracle database currently assigns `DEV-5X5 / PVDRILLING-V2` to Rig `1000000`. That immutable configuration contains five Probability rows, five Severity rows, four Risk Results (Dark Green, Light Green, Yellow, and Red), and 25 explicit cells matching the confirmed PV Drilling legacy 5x5 matrix. It was created with source-site Oracle sequences; the previous `DEV-V1` assignment was effective-ended rather than rewritten.
+
 ## Phase 3 JSA Draft and version model
 
 Migration 005 adds `JSA_MASTER`, `JSA_VERSION`, `JSA_VERSION_PROMPT`, `JSA_VERSION_PROMPT_COVERAGE`, `JSA_VERSION_TASK`, `JSA_VERSION_HAZARD`, `JSA_VERSION_CONTROL`, `JSA_VERSION_BASIC_STEP`, `JSA_VER_BASIC_STEP_PERFORMER`, `JSA_VER_BASIC_STEP_SUPERVISOR`, `JSA_VER_BASIC_STEP_TOOL`, `JSA_VERSION_PROCEDURE_REF`, and `JSA_VERSION_ATTACHMENT`.
 
-`JSA_MASTER` owns the stable number, ownership hierarchy, creator, lifecycle status, and nullable Current/Working Version pointers. Initially Current is null and Working references the first Draft `JSA_VERSION`. Composite foreign keys ensure both pointers belong to the same Master. Configurable `NUMBER_SCOPE_KEY` plus `JSA_NUMBER` uniqueness supports an approved global or per-site policy without embedding that open decision.
+`JSA_VERSION_PROCEDURE_REF` is retained for historical compatibility. Current JSA creation/revision does not collect Procedure References, and an aggregate Working Version save deactivates any carried legacy rows by persisting an empty Procedure Reference collection.
+
+`JSA_MASTER` owns the stable business identity, ownership hierarchy, creator, lifecycle status, number status, and nullable Current/Working Version pointers. Initially Current is null and Working references the first Draft `JSA_VERSION`; `JSA_NUMBER` is temporary and `NUMBER_STATUS='TEMPORARY'`. Initial publication replaces it with the immutable Official number and sets `NUMBER_STATUS='OFFICIAL'`. Composite foreign keys ensure both pointers belong to the same Master.
+
+Migration 011 adds `JSA_NUMBER_COUNTER`, keyed by the exact Rig/Department pair and linked back to the owning Site hierarchy. `LAST_NUMBER` is constrained to `0`–`9999`; publication locks the Department/counter and increments it without `MAX()+1`. `TRG_JSA_OFFICIAL_NUM_IMMUTABLE` rejects later changes to `JSA_NUMBER`, `NUMBER_SCOPE_KEY`, or `NUMBER_STATUS` after official assignment.
+
+Migration 010 aligns `JSA_VERSION` with the confirmed creation model. `JOB_TYPE_ID` is nullable and is not populated for new JSAs; existing historical values are retained. `LANGUAGE_ID` is mandatory, new source versions resolve the single active `SYS_LANGUAGE.LANGUAGE_CODE='EN'` row server-side, and `TRG_JSA_VERSION_ENGLISH` rejects insert/update attempts using another or inactive language. Non-English content remains a separate Translation object rather than a source JSA Version. The nullable `JOB_DESCRIPTION`, `PTW_REFERENCE`, `LOCATION_TEXT`, and `PERSONNEL_TEXT` columns plus `PTW_REQUIRED_FLAG` created by migration 005 remain only for schema and historical-data compatibility; current JSA creation/revision authors only `JOB_TITLE`, does not collect those legacy fields, and Draft-header saves leave historical values untouched. `JSA_VERSION_PROMPT_COVERAGE` is likewise retained for schema/history compatibility, but current authoring stores prompts as independent selections and aggregate saves deactivate legacy coverage rows.
 
 Every version-owned row has its own `NUMBER(19)` primary key and stable `LOGICAL_KEY`, unique inside its version. Composite foreign keys prevent Task, Hazard, Control, prompt coverage, Basic Job Step, and assignment links from crossing versions. Active flags and optimistic `ROW_VERSION` support soft deactivation rather than physical replacement.
 
-Hazards store independent initial/residual likelihood and severity IDs plus server-derived cell, textual rating, result code/name, and prohibited snapshots. Basic Job Steps are independently ordered and may optionally link to a Task. Performer/Supervisor Position and Tool assignments retain source IDs and code/name snapshots. Procedure references retain governed snapshots. Attachments contain metadata/status/storage key only.
+Hazards store initial/residual likelihood and severity IDs plus server-derived cell, textual rating, result code/name, and prohibited snapshots. Residual Severity must equal Initial Severity; only Residual Likelihood is independently reassessed after Controls. Migration 009 adds `CHK_JSA_HAZ_RES_SEV_MATCH`, while application save and submission validation enforce the same rule. Each active Hazard has exactly one active Control by confirmed business rule. Migration 008 adds `UX_JSA_VER_CTL_ACTIVE_HAZ`, a function-based unique index that prevents more than one active `JSA_VERSION_CONTROL` for a Hazard; application save and submission validation require the corresponding minimum of one. Basic Job Steps are independently ordered and may optionally link to a Task. Performer/Supervisor Position and Tool assignments retain source IDs and code/name snapshots. Procedure references retain governed snapshots. Attachments contain metadata/status/storage key only.
 
 Migration 005 creates one sequence per table key plus `SEQ_JSA_BUSINESS_NUMBER` (14 total). All are included in startup site-range validation and the controlled Phase 3 bootstrap. GoldenGate copies IDs/logical keys unchanged and never replicates sequence state.
+
+## Attachment Library model
+
+Migration 012 adds:
+
+- `JSA_ATTACHMENT_FOLDER`: a nested governed folder with immutable Site/Rig/Department scope, optional same-scope parent, active state, site provenance, audit fields, and optimistic row version.
+- `JSA_ATTACHMENT_ASSET`: the logical reusable attachment, folder ownership, business name/description, active state, and pointer to its current immutable version.
+- `JSA_ATTACHMENT_ASSET_VERSION`: immutable version number, original file name, content type, byte size, SHA-256 checksum, relative storage key, storage status, source site, and creation audit.
+- `JSA_VERSION_ATTACHMENT.LIBRARY_ASSET_VERSION_ID`: the exact library file version selected by the JSA Version.
+- `JSA_VERSION_ATTACHMENT.CONTENT_SHA256`: the checksum snapshot retained with the JSA attachment metadata.
+
+The model separates logical replacement from historical identity: Replace inserts a new `JSA_ATTACHMENT_ASSET_VERSION` and moves only `CURRENT_VERSION_ID`; prior versions and existing JSA associations remain unchanged. The binary is not stored in Oracle. `STORAGE_KEY` is relative to the deployment-specific `ATTACHMENT_STORAGE_ROOT` and begins with the owning Site/Rig/Department IDs.
+
+`SEQ_JSA_ATTACHMENT_FOLDER`, `SEQ_JSA_ATTACHMENT_ASSET`, and `SEQ_JSA_ATTACHMENT_VERSION` use the same non-overlapping site-range invariant as other replicated identifiers. `db:bootstrap:attachments` configures only these allowlisted sequences after migration 012. GoldenGate preserves all attachment metadata PK/FK values and does not replicate sequence state, absolute paths, or file bytes; an external product synchronizes the corresponding filesystem tree.
 
 ## Phase 0A development policy
 
 The Windows development environment selects node-oracledb Thick mode. Oracle Database 23.0.0.0.0 and Instant Client 23.9 were verified; Phase 0 SQL uses only Oracle 19c-compatible features, although execution against an actual 19c instance was not part of Phase 0A. The dedicated development schema is `JSA_APP`, as confirmed during Phase 0A; no rollback runs until session user, current schema, service `PDBAPPS`, project-object ownership, and non-production status are confirmed. Ordinary migration SQL uses semicolons; PL/SQL ends with slash on a separate line. Oracle DDL implicitly commits, so rollback is compensating DDL and partial failures require operator review.
+
 ## Phase 4 Approval Workflow and Initial Publishing
 
 Migration 006 extends Master status with `PUBLISHED`, expands Version status to 30 characters for all review/terminal states, and adds `PUBLISHED_AT`, `PUBLISHED_BY_USER_ID`, and `PUBLISHED_BY_USERNAME`. A check constraint requires complete publication metadata only for `PUBLISHED`.
@@ -165,3 +214,11 @@ Configuration tables are `JSA_WORKFLOW_DEFINITION`, `JSA_WORKFLOW_STEP`, `JSA_WO
 `JSA_ASSERT_VERSION_MUTABLE` plus twelve `TRG_JSA_*` triggers block mutation of a Published Version and all version-owned snapshot children. Application state predicates remain an additional guard.
 
 Phase 4 owns nine explicit sequences for definition, step, binding, role assignment, instance, task, action, notification, and outbox. All participate in startup Site-range validation and Phase 4 bootstrap; `MAX(id)+1` is prohibited.
+
+## Phase 4.5 Access Administration and Workflow Evidence
+
+Migration 007 adds `SYS_ACCESS_ADMIN_AUDIT`, whose `AUDIT_EVENT_ID NUMBER(19)` is generated only by `SEQ_SYS_ACCESS_ADMIN_AUDIT`. Each row records action, target type/ID and optional username snapshot, actor ID/username/display snapshots, governed Site/Rig/Department context, JSON before/after state, reason, correlation ID, occurrence time, and created Site. Named actor/scope foreign keys and JSON checks apply. `IX_SYS_ACCESS_AUDIT_TIME`, `IX_SYS_ACCESS_AUDIT_ACTOR`, `IX_SYS_ACCESS_AUDIT_TARGET`, and `IX_SYS_ACCESS_AUDIT_SCOPE` support governed queries. `TRG_SYS_ACCESS_AUDIT_IMMUTABLE` rejects ordinary UPDATE and DELETE.
+
+`JSA_WORKFLOW_TASK` gains immutable-at-creation snapshots for step code/name, workflow Role code, and assignee username/display name. `JSA_WORKFLOW_ACTION` gains step code/name, workflow Role code, and actor display-name snapshots. Existing records are backfilled by migration; later user profile, Role, scope, or workflow-assignment changes do not rewrite historical approval evidence.
+
+The new audit sequence participates in the same Site-range startup validation, controlled Phase 4.5 sequence-only bootstrap, and GoldenGate invariants as every prior key: preserve source IDs, never regenerate target IDs, and never replicate sequence state.

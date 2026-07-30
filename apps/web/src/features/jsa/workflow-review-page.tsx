@@ -1,22 +1,13 @@
-import {
-  Alert,
-  Button,
-  Card,
-  Input,
-  Modal,
-  Space,
-  Spin,
-  Tag,
-  Timeline,
-  Typography,
-  message,
-} from 'antd';
+import { Alert, Button, Card, Input, Modal, Space, Spin, Tag, Typography, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useCurrentUser } from '../auth/auth-context';
 import type { ApiClientError } from '../../services/api-client';
 import { workflowApi } from './workflow-api';
+import { ApprovalProgress } from './approval-progress';
+import { ApprovalHistory } from './approval-history';
+import { JsaDraftEditor } from './jsa-draft-editor';
 import './workflow.css';
 export function WorkflowReviewPage() {
   const { id = '' } = useParams();
@@ -28,6 +19,10 @@ export function WorkflowReviewPage() {
   const query = useQuery({
     queryKey: ['workflow-detail', id],
     queryFn: () => workflowApi.detail(id),
+  });
+  const preview = useQuery({
+    queryKey: ['workflow-preview', id],
+    queryFn: () => workflowApi.preview(id),
   });
   const mutation = useMutation({
     mutationFn: (action: 'approve' | 'return' | 'reject' | 'comment') =>
@@ -50,19 +45,37 @@ export function WorkflowReviewPage() {
     <main className="workflow-page">
       <Button onClick={() => navigate(-1)}>Back</Button>
       <Typography.Text className="eyebrow">WORKFLOW REVIEW</Typography.Text>
+      <Typography.Text type="secondary">
+        {detail.versionStatus === 'PUBLISHED' ? 'Official JSA Number' : 'Temporary JSA Number'}
+      </Typography.Text>
       <Typography.Title level={1}>{detail.jsaNumber}</Typography.Title>
       <Space wrap>
         <Tag>{detail.versionStatus}</Tag>
         <Tag>Cycle {detail.cycleNumber}</Tag>
         {detail.currentStepName && <Tag color="blue">{detail.currentStepName}</Tag>}
+        {detail.versionStatus === 'PUBLISHED' ? (
+          <Button
+            type="primary"
+            onClick={() =>
+              window.open(`/jsa/${detail.jsaId}/print`, '_blank', 'noopener,noreferrer')
+            }
+          >
+            Print JSA
+          </Button>
+        ) : null}
       </Space>
-      <Card
-        title={detail.jobTitle || 'JSA'}
-        extra={<Button onClick={() => navigate(`/jsa/${id}/draft`)}>Open read-only JSA</Button>}
-      >
+      <ApprovalProgress
+        versionStatus={detail.versionStatus}
+        steps={preview.data?.steps}
+        currentStepOrder={detail.currentStepOrder}
+        currentStepName={detail.currentStepName}
+        loading={preview.isLoading}
+        configured={preview.data?.configured}
+      />
+      <Card className="workflow-action-card" title={detail.jobTitle || 'JSA approval decision'}>
         <Typography.Paragraph>
-          The JSA content is immutable while approval is active. Review the complete worksheet
-          before taking action.
+          Review the complete read-only worksheet below, then record the approval decision on this
+          page.
         </Typography.Paragraph>
         {assigned && (
           <Space wrap>
@@ -81,21 +94,21 @@ export function WorkflowReviewPage() {
         )}
         <Button onClick={() => setDialog('comment')}>Add comment</Button>
       </Card>
-      <Card title="Approval history">
-        <Timeline
-          items={detail.actions.map((a) => ({
-            color: a.action === 'REJECT' ? 'red' : a.action === 'RETURN' ? 'orange' : 'green',
-            children: (
-              <>
-                <strong>{a.action}</strong> · {a.actorUsername} ·{' '}
-                {new Date(a.actionAt).toLocaleString()}
-                <br />
-                {a.comment}
-              </>
-            ),
-          }))}
-        />
-      </Card>
+      <section className="workflow-worksheet-section" aria-labelledby="workflow-worksheet-title">
+        <div className="workflow-worksheet-heading">
+          <div>
+            <Typography.Title id="workflow-worksheet-title" level={2}>
+              Complete JSA
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              This exact Working Version is read-only while approval is active.
+            </Typography.Text>
+          </div>
+          <Tag>{detail.versionStatus}</Tag>
+        </div>
+        <JsaDraftEditor embedded forceReadOnly />
+      </section>
+      <ApprovalHistory actions={detail.actions} />
       <Modal
         title={
           dialog === 'return'

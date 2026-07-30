@@ -41,7 +41,7 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
           siteId: r.SITE_ID,
           rigId: r.RIG_ID,
           departmentId: r.DEPARTMENT_ID,
-          jobTypeId: r.JOB_TYPE_ID,
+          ...(r.JOB_TYPE_ID ? { jobTypeId: r.JOB_TYPE_ID } : {}),
           creatorUserId: r.CREATOR_USER_ID,
           masterStatus: r.MASTER_STATUS,
           versionStatus: r.VERSION_STATUS,
@@ -56,7 +56,12 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
   ): Promise<WorkflowBindingRecord[]> {
     const result = await context.connection.execute<Row>(
       `SELECT TO_CHAR(B.BINDING_ID) BINDING_ID,TO_CHAR(B.DEFINITION_ID) DEFINITION_ID,D.DEFINITION_CODE,D.VERSION_NUMBER,B.PRIORITY_NUMBER,(CASE WHEN B.SITE_ID IS NOT NULL THEN 1 ELSE 0 END+CASE WHEN B.RIG_ID IS NOT NULL THEN 1 ELSE 0 END+CASE WHEN B.DEPARTMENT_ID IS NOT NULL THEN 1 ELSE 0 END+CASE WHEN B.JOB_TYPE_ID IS NOT NULL THEN 1 ELSE 0 END) SPECIFICITY FROM JSA_WORKFLOW_BINDING B JOIN JSA_WORKFLOW_DEFINITION D ON D.DEFINITION_ID=B.DEFINITION_ID WHERE B.IS_ACTIVE='Y' AND D.STATUS_CODE='ACTIVE' AND B.EFFECTIVE_FROM<=SYSTIMESTAMP AND (B.EFFECTIVE_TO IS NULL OR B.EFFECTIVE_TO>=SYSTIMESTAMP) AND (D.EFFECTIVE_FROM IS NULL OR D.EFFECTIVE_FROM<=SYSTIMESTAMP) AND (D.EFFECTIVE_TO IS NULL OR D.EFFECTIVE_TO>=SYSTIMESTAMP) AND (B.SITE_ID IS NULL OR B.SITE_ID=:siteId) AND (B.RIG_ID IS NULL OR B.RIG_ID=:rigId) AND (B.DEPARTMENT_ID IS NULL OR B.DEPARTMENT_ID=:departmentId) AND (B.JOB_TYPE_ID IS NULL OR B.JOB_TYPE_ID=:jobTypeId) ORDER BY SPECIFICITY DESC,B.PRIORITY_NUMBER,B.BINDING_ID`,
-      { siteId: t.siteId, rigId: t.rigId, departmentId: t.departmentId, jobTypeId: t.jobTypeId },
+      {
+        siteId: t.siteId,
+        rigId: t.rigId,
+        departmentId: t.departmentId,
+        jobTypeId: t.jobTypeId ?? null,
+      },
       options,
     );
     return (result.rows ?? []).map((r) => ({
@@ -115,7 +120,7 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
   }
   async submissionIssues(context: OracleTransactionContext, versionId: string): Promise<string[]> {
     const result = await context.connection.execute<Row>(
-      `SELECT ISSUE FROM (SELECT 'Job title is required' ISSUE FROM JSA_VERSION WHERE JSA_VERSION_ID=:versionId AND TRIM(JOB_TITLE) IS NULL UNION ALL SELECT 'At least one Task is required' FROM DUAL WHERE NOT EXISTS(SELECT 1 FROM JSA_VERSION_TASK WHERE JSA_VERSION_ID=:versionId AND IS_ACTIVE='Y') UNION ALL SELECT 'Every Task requires a Hazard' FROM DUAL WHERE EXISTS(SELECT 1 FROM JSA_VERSION_TASK T WHERE T.JSA_VERSION_ID=:versionId AND T.IS_ACTIVE='Y' AND NOT EXISTS(SELECT 1 FROM JSA_VERSION_HAZARD H WHERE H.VERSION_TASK_ID=T.VERSION_TASK_ID AND H.IS_ACTIVE='Y')) UNION ALL SELECT 'Every Hazard requires a Control and both Risk ratings' FROM DUAL WHERE EXISTS(SELECT 1 FROM JSA_VERSION_HAZARD H WHERE H.JSA_VERSION_ID=:versionId AND H.IS_ACTIVE='Y' AND (H.INITIAL_CELL_ID IS NULL OR H.RESIDUAL_CELL_ID IS NULL OR H.RESIDUAL_PROHIBITED_FLAG='Y' OR NOT EXISTS(SELECT 1 FROM JSA_VERSION_CONTROL C WHERE C.VERSION_HAZARD_ID=H.VERSION_HAZARD_ID AND C.IS_ACTIVE='Y'))) UNION ALL SELECT 'At least one complete Basic Job Step is required' FROM DUAL WHERE NOT EXISTS(SELECT 1 FROM JSA_VERSION_BASIC_STEP S WHERE S.JSA_VERSION_ID=:versionId AND S.IS_ACTIVE='Y') OR EXISTS(SELECT 1 FROM JSA_VERSION_BASIC_STEP S WHERE S.JSA_VERSION_ID=:versionId AND S.IS_ACTIVE='Y' AND (NOT EXISTS(SELECT 1 FROM JSA_VER_BASIC_STEP_PERFORMER P WHERE P.BASIC_STEP_ID=S.BASIC_STEP_ID AND P.IS_ACTIVE='Y') OR NOT EXISTS(SELECT 1 FROM JSA_VER_BASIC_STEP_SUPERVISOR P WHERE P.BASIC_STEP_ID=S.BASIC_STEP_ID AND P.IS_ACTIVE='Y') OR (S.NO_TOOL_REQUIRED_FLAG='N' AND NOT EXISTS(SELECT 1 FROM JSA_VER_BASIC_STEP_TOOL T WHERE T.BASIC_STEP_ID=S.BASIC_STEP_ID AND T.IS_ACTIVE='Y')))))`,
+      `SELECT ISSUE FROM (SELECT 'Job title is required' ISSUE FROM JSA_VERSION WHERE JSA_VERSION_ID=:versionId AND TRIM(JOB_TITLE) IS NULL UNION ALL SELECT 'At least one Task is required' FROM DUAL WHERE NOT EXISTS(SELECT 1 FROM JSA_VERSION_TASK WHERE JSA_VERSION_ID=:versionId AND IS_ACTIVE='Y') UNION ALL SELECT 'Every Task requires a Hazard' FROM DUAL WHERE EXISTS(SELECT 1 FROM JSA_VERSION_TASK T WHERE T.JSA_VERSION_ID=:versionId AND T.IS_ACTIVE='Y' AND NOT EXISTS(SELECT 1 FROM JSA_VERSION_HAZARD H WHERE H.VERSION_TASK_ID=T.VERSION_TASK_ID AND H.IS_ACTIVE='Y')) UNION ALL SELECT 'Every Hazard requires exactly one Control, matching Initial/Residual Severity, and both Risk ratings' FROM DUAL WHERE EXISTS(SELECT 1 FROM JSA_VERSION_HAZARD H WHERE H.JSA_VERSION_ID=:versionId AND H.IS_ACTIVE='Y' AND (H.INITIAL_CELL_ID IS NULL OR H.RESIDUAL_CELL_ID IS NULL OR H.INITIAL_SEVERITY_ID<>H.RESIDUAL_SEVERITY_ID OR H.RESIDUAL_PROHIBITED_FLAG='Y' OR (SELECT COUNT(*) FROM JSA_VERSION_CONTROL C WHERE C.VERSION_HAZARD_ID=H.VERSION_HAZARD_ID AND C.IS_ACTIVE='Y')<>1)) UNION ALL SELECT 'At least one complete Basic Job Step is required' FROM DUAL WHERE NOT EXISTS(SELECT 1 FROM JSA_VERSION_BASIC_STEP S WHERE S.JSA_VERSION_ID=:versionId AND S.IS_ACTIVE='Y') OR EXISTS(SELECT 1 FROM JSA_VERSION_BASIC_STEP S WHERE S.JSA_VERSION_ID=:versionId AND S.IS_ACTIVE='Y' AND (NOT EXISTS(SELECT 1 FROM JSA_VER_BASIC_STEP_PERFORMER P WHERE P.BASIC_STEP_ID=S.BASIC_STEP_ID AND P.IS_ACTIVE='Y') OR NOT EXISTS(SELECT 1 FROM JSA_VER_BASIC_STEP_SUPERVISOR P WHERE P.BASIC_STEP_ID=S.BASIC_STEP_ID AND P.IS_ACTIVE='Y') OR (S.NO_TOOL_REQUIRED_FLAG='N' AND NOT EXISTS(SELECT 1 FROM JSA_VER_BASIC_STEP_TOOL T WHERE T.BASIC_STEP_ID=S.BASIC_STEP_ID AND T.IS_ACTIVE='Y')))))`,
       { versionId },
       options,
     );
@@ -175,7 +180,15 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
       },
     );
     await c.connection.execute(
-      `INSERT INTO JSA_WORKFLOW_TASK(WORKFLOW_TASK_ID,INSTANCE_ID,STEP_ID,CYCLE_NUMBER,ASSIGNEE_USER_ID,CREATED_BY,UPDATED_BY) VALUES(:taskId,:instanceId,:stepId,1,:assigneeId,:username,:username)`,
+      `INSERT INTO JSA_WORKFLOW_TASK(
+         WORKFLOW_TASK_ID,INSTANCE_ID,STEP_ID,CYCLE_NUMBER,ASSIGNEE_USER_ID,
+         STEP_CODE_SNAPSHOT,STEP_NAME_SNAPSHOT,WF_ROLE_CODE_SNAPSHOT,
+         ASSIGNEE_USERNAME_SNAPSHOT,ASSIGNEE_DISPLAY_SNAPSHOT,CREATED_BY,UPDATED_BY)
+       SELECT :taskId,:instanceId,S.STEP_ID,1,U.USER_ID,
+              S.STEP_CODE,S.STEP_NAME,S.WORKFLOW_ROLE_CODE,U.USERNAME,U.DISPLAY_NAME,
+              :username,:username
+       FROM JSA_WORKFLOW_STEP S CROSS JOIN SYS_USER U
+       WHERE S.STEP_ID=:stepId AND U.USER_ID=:assigneeId`,
       { taskId, instanceId, stepId: s.stepId, assigneeId, username },
     );
     const v = await c.connection.execute(
@@ -224,7 +237,15 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
       { stepOrder: s.order, cycle, username, instanceId: r.instanceId },
     );
     await c.connection.execute(
-      `INSERT INTO JSA_WORKFLOW_TASK(WORKFLOW_TASK_ID,INSTANCE_ID,STEP_ID,CYCLE_NUMBER,ASSIGNEE_USER_ID,CREATED_BY,UPDATED_BY) VALUES(:taskId,:instanceId,:stepId,:cycle,:assigneeId,:username,:username)`,
+      `INSERT INTO JSA_WORKFLOW_TASK(
+         WORKFLOW_TASK_ID,INSTANCE_ID,STEP_ID,CYCLE_NUMBER,ASSIGNEE_USER_ID,
+         STEP_CODE_SNAPSHOT,STEP_NAME_SNAPSHOT,WF_ROLE_CODE_SNAPSHOT,
+         ASSIGNEE_USERNAME_SNAPSHOT,ASSIGNEE_DISPLAY_SNAPSHOT,CREATED_BY,UPDATED_BY)
+       SELECT :taskId,:instanceId,S.STEP_ID,:cycle,U.USER_ID,
+              S.STEP_CODE,S.STEP_NAME,S.WORKFLOW_ROLE_CODE,U.USERNAME,U.DISPLAY_NAME,
+              :username,:username
+       FROM JSA_WORKFLOW_STEP S CROSS JOIN SYS_USER U
+       WHERE S.STEP_ID=:stepId AND U.USER_ID=:assigneeId`,
       { taskId, instanceId: r.instanceId, stepId: s.stepId, cycle, assigneeId, username },
     );
     await c.connection.execute(
@@ -376,7 +397,15 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
     if (next && nextAssigneeId) {
       const taskId = await this.next(c, 'SEQ_JSA_WORKFLOW_TASK');
       await c.connection.execute(
-        `INSERT INTO JSA_WORKFLOW_TASK(WORKFLOW_TASK_ID,INSTANCE_ID,STEP_ID,CYCLE_NUMBER,ASSIGNEE_USER_ID,CREATED_BY,UPDATED_BY) VALUES(:taskId,:instanceId,:stepId,:cycle,:assigneeId,:username,:username)`,
+        `INSERT INTO JSA_WORKFLOW_TASK(
+           WORKFLOW_TASK_ID,INSTANCE_ID,STEP_ID,CYCLE_NUMBER,ASSIGNEE_USER_ID,
+           STEP_CODE_SNAPSHOT,STEP_NAME_SNAPSHOT,WF_ROLE_CODE_SNAPSHOT,
+           ASSIGNEE_USERNAME_SNAPSHOT,ASSIGNEE_DISPLAY_SNAPSHOT,CREATED_BY,UPDATED_BY)
+         SELECT :taskId,:instanceId,S.STEP_ID,:cycle,U.USER_ID,
+                S.STEP_CODE,S.STEP_NAME,S.WORKFLOW_ROLE_CODE,U.USERNAME,U.DISPLAY_NAME,
+                :username,:username
+         FROM JSA_WORKFLOW_STEP S CROSS JOIN SYS_USER U
+         WHERE S.STEP_ID=:stepId AND U.USER_ID=:assigneeId`,
         {
           taskId,
           instanceId: r.instanceId,
@@ -406,6 +435,7 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
       );
       return;
     }
+    const officialNumber = await this.assignOfficialNumber(c, r.target, username);
     const version = await c.connection.execute(
       `UPDATE JSA_VERSION SET VERSION_STATUS='PUBLISHED',PUBLISHED_AT=SYSTIMESTAMP,PUBLISHED_BY_USER_ID=:userId,PUBLISHED_BY_USERNAME=:username,UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:username,ROW_VERSION=ROW_VERSION+1 WHERE JSA_VERSION_ID=:versionId AND VERSION_STATUS=:status AND PUBLISHED_AT IS NULL`,
       { userId, username, versionId: r.target.versionId, status: r.versionStatus },
@@ -439,12 +469,113 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
       c,
       r.target.creatorUserId,
       'JSA_PUBLISHED',
-      `JSA published: ${r.target.jsaNumber}`,
+      `JSA published: ${officialNumber}`,
       'Initial JSA publication completed',
       'JSA_MASTER',
       r.target.jsaId,
       username,
     );
+  }
+
+  private async assignOfficialNumber(
+    c: OracleTransactionContext,
+    target: WorkflowTarget,
+    actor: string,
+  ): Promise<string> {
+    const master = await c.connection.execute<Row>(
+      `SELECT JSA_NUMBER,NUMBER_STATUS
+       FROM JSA_MASTER
+       WHERE JSA_ID=:jsaId
+       FOR UPDATE`,
+      { jsaId: target.jsaId },
+      options,
+    );
+    const current = master.rows?.[0];
+    if (!current) throw new StateConflictError('JSA Master was not found during publication');
+    if (current.NUMBER_STATUS === 'OFFICIAL') return current.JSA_NUMBER;
+    if (current.NUMBER_STATUS !== 'TEMPORARY')
+      throw new StateConflictError('JSA number status is invalid for publication');
+
+    const hierarchy = await c.connection.execute<Row>(
+      `SELECT R.RIG_CODE,D.DEPARTMENT_CODE
+       FROM SYS_RIG R
+       JOIN SYS_DEPARTMENT D
+         ON D.RIG_ID=R.RIG_ID AND D.SITE_ID=R.SITE_ID
+       WHERE R.RIG_ID=:rigId
+         AND D.DEPARTMENT_ID=:departmentId
+         AND R.SITE_ID=:siteId
+       FOR UPDATE OF D.ROW_VERSION`,
+      {
+        siteId: target.siteId,
+        rigId: target.rigId,
+        departmentId: target.departmentId,
+      },
+      options,
+    );
+    const ownership = hierarchy.rows?.[0];
+    if (!ownership) throw new StateConflictError('JSA Rig and Department hierarchy is unavailable');
+
+    await c.connection.execute(
+      `MERGE INTO JSA_NUMBER_COUNTER C
+       USING (
+         SELECT :siteId SITE_ID,:rigId RIG_ID,:departmentId DEPARTMENT_ID FROM DUAL
+       ) S
+       ON (C.RIG_ID=S.RIG_ID AND C.DEPARTMENT_ID=S.DEPARTMENT_ID)
+       WHEN NOT MATCHED THEN
+         INSERT (
+           SITE_ID,RIG_ID,DEPARTMENT_ID,LAST_NUMBER,CREATED_BY,UPDATED_BY
+         ) VALUES (
+           S.SITE_ID,S.RIG_ID,S.DEPARTMENT_ID,0,:actor,:actor
+         )`,
+      {
+        siteId: target.siteId,
+        rigId: target.rigId,
+        departmentId: target.departmentId,
+        actor,
+      },
+    );
+    const counter = await c.connection.execute<Row>(
+      `SELECT LAST_NUMBER
+       FROM JSA_NUMBER_COUNTER
+       WHERE RIG_ID=:rigId AND DEPARTMENT_ID=:departmentId
+       FOR UPDATE`,
+      { rigId: target.rigId, departmentId: target.departmentId },
+      options,
+    );
+    const nextNumber = Number(counter.rows?.[0]?.LAST_NUMBER ?? -1) + 1;
+    if (!Number.isInteger(nextNumber) || nextNumber < 1 || nextNumber > 9999)
+      throw new StateConflictError('The Rig/Department JSA number range 0001-9999 is exhausted');
+    const officialNumber = `${ownership.RIG_CODE}-${ownership.DEPARTMENT_CODE}-${String(nextNumber).padStart(4, '0')}`;
+    if (officialNumber.length > 100)
+      throw new StateConflictError('Official JSA number exceeds 100 characters');
+
+    await c.connection.execute(
+      `UPDATE JSA_NUMBER_COUNTER
+       SET LAST_NUMBER=:nextNumber,UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,
+           ROW_VERSION=ROW_VERSION+1
+       WHERE RIG_ID=:rigId AND DEPARTMENT_ID=:departmentId`,
+      {
+        nextNumber,
+        actor,
+        rigId: target.rigId,
+        departmentId: target.departmentId,
+      },
+    );
+    const assigned = await c.connection.execute(
+      `UPDATE JSA_MASTER
+       SET JSA_NUMBER=:officialNumber,NUMBER_SCOPE_KEY=:siteId,NUMBER_STATUS='OFFICIAL',
+           UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1
+       WHERE JSA_ID=:jsaId AND NUMBER_STATUS='TEMPORARY'`,
+      {
+        officialNumber,
+        siteId: target.siteId,
+        actor,
+        jsaId: target.jsaId,
+      },
+    );
+    if (assigned.rowsAffected !== 1)
+      throw new StateConflictError('Official JSA number could not be assigned');
+    return officialNumber;
   }
   async listQueue(
     c: OracleTransactionContext,
@@ -714,7 +845,18 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
   ) {
     const id = await this.next(c, 'SEQ_JSA_WORKFLOW_ACTION');
     await c.connection.execute(
-      `INSERT INTO JSA_WORKFLOW_ACTION(ACTION_ID,INSTANCE_ID,WORKFLOW_TASK_ID,CYCLE_NUMBER,ACTION_CODE,ACTOR_USER_ID,ACTOR_USERNAME,FROM_STATUS,TO_STATUS,COMMENT_TEXT,CORRELATION_ID) VALUES(:id,:instanceId,:taskId,:cycle,:action,:userId,:username,:fromStatus,:toStatus,:commentText,:correlationId)`,
+      `INSERT INTO JSA_WORKFLOW_ACTION(
+         ACTION_ID,INSTANCE_ID,WORKFLOW_TASK_ID,CYCLE_NUMBER,ACTION_CODE,
+         ACTOR_USER_ID,ACTOR_USERNAME,FROM_STATUS,TO_STATUS,COMMENT_TEXT,CORRELATION_ID,
+         STEP_CODE_SNAPSHOT,STEP_NAME_SNAPSHOT,WF_ROLE_CODE_SNAPSHOT,
+         ACTOR_DISPLAY_NAME_SNAPSHOT)
+       SELECT :id,:instanceId,:taskId,:cycle,:action,:userId,:username,
+              :fromStatus,:toStatus,:commentText,:correlationId,
+              T.STEP_CODE_SNAPSHOT,T.STEP_NAME_SNAPSHOT,T.WF_ROLE_CODE_SNAPSHOT,
+              U.DISPLAY_NAME
+       FROM SYS_USER U
+       LEFT JOIN JSA_WORKFLOW_TASK T ON T.WORKFLOW_TASK_ID=:taskId
+       WHERE U.USER_ID=:userId`,
       {
         id,
         instanceId,

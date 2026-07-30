@@ -39,4 +39,40 @@ describe('GlobalExceptionFilter', () => {
       }),
     );
   });
+  it('exposes the internal error message only outside production', () => {
+    const response = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const logger = { error: jest.fn() };
+    const host = { switchToHttp: () => ({ getResponse: () => response }) };
+    new GlobalExceptionFilter(logger as never, 'development').catch(
+      new Error('ORA-00932: inconsistent datatypes'),
+      host as never,
+    );
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'ORA-00932: inconsistent datatypes',
+          details: ['ORA-00932: inconsistent datatypes'],
+        },
+      }),
+    );
+  });
+  it('keeps unexpected production errors generic', () => {
+    const response = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const logger = { error: jest.fn() };
+    const host = { switchToHttp: () => ({ getResponse: () => response }) };
+    new GlobalExceptionFilter(logger as never).catch(
+      new Error('sensitive internal failure'),
+      host as never,
+    );
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'An unexpected error occurred',
+          details: [],
+        },
+      }),
+    );
+  });
 });

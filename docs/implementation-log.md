@@ -1,5 +1,240 @@
 # Implementation log
 
+## Print Hazard Prompt checkbox borders (2026-07-30)
+
+- Restored the bordered selection cell for every Hazard Assessment Prompt in the Published JSA print form, including unselected prompts, so the `X` marker and prompt label render as distinct legacy-form columns.
+- Kept the existing five-column prompt layout, governed prompt data, selected state, print colors, and pagination behavior unchanged.
+
+## Stable My Drafts table layout (2026-07-30)
+
+- Removed the Ant Design fixed-right column and JavaScript-managed horizontal scrolling from `/jsa/drafts`; these combined features repeatedly measured and repainted the table and caused visible jitter.
+- Added stable fixed-width column definitions, memoized column configuration, native overflow scrolling for narrow viewports, and a reserved loading/result area to prevent layout shifts while Draft data loads.
+- Disabled scaling motion for dense table actions while retaining tokenized color/background feedback, consistent with the repository's dense-control and reduced-motion design rules.
+- Disabled window-focus refetch for this creator-owned work queue so moving between the application and developer tools does not trigger an unnecessary Draft-list refresh. No API, authorization, workflow, or persistence behavior changed.
+
+## Published JSA HTML print form (2026-07-30)
+
+- Added a backend print-read endpoint that returns the exact current Published JSA Version under existing JSA view permission and data scope, and rejects Draft, Returned, active-approval, Rejected, and Cancelled states.
+- Added immutable print metadata for JSA version number, language, and publication timestamp without changing the Oracle schema.
+- Added a dedicated authenticated shell-free HTML print preview, Published-queue and Published-workflow print actions, browser Print/Save-as-PDF invocation, A4 landscape print CSS, repeated dense-table headers, page-break controls, and exact-version trace metadata.
+- Recreated the confirmed PV Drilling `JOB SAFETY ANALYSIS POLICY` / `P1.04.09` form through Basic Job Step using real Published JSA snapshots. `PERSONAL INVOLVED`, manual signature rows, the PTW suspension note, and Work Leader Debrief are static blank layout only.
+- No server-side PDF binary, file persistence, print audit, copy numbering, watermarking, or new permission code was introduced.
+
+## Read-only JSA static presentation (2026-07-29)
+
+- Replaced disabled authoring controls on read-only JSA worksheets with readable static presentation for the complete governed Hazard Assessment Prompt list and its selected/not-selected state, Matrix risk selections, performer/supervisor Position snapshots, Tool snapshots, and no-tool state. Historical selected Prompt snapshots remain visible if absent from the current governed list.
+- Removed edit-only actions and structure from read-only rendering: add/insert/delete buttons, `Del` columns, assignment and attachment pickers, attachment removal, validation/save/cancel/submit actions, and disabled checkboxes.
+- Preserved selectable read-only authored text and immutable snapshot values. No API, authorization, workflow, persistence, or schema behavior changed.
+
+## Returned JSA approval history on correction screen (2026-07-29)
+
+- Added a reusable Approval History component shared by the active Workflow Review screen and the editable Returned JSA correction screen.
+- Returned creators now see the complete accumulated workflow evidence on the same one-screen worksheet: action, actor username, cycle, from/to status, timestamp, and required Return/Reject comments.
+- Added explicit loading, empty, and recoverable error states plus responsive wrapping, semantic time elements, textual action/status labels, and readable comment treatment. Embedded read-only worksheets do not duplicate the parent review screen's history.
+- Reused the existing governed workflow-detail API and immutable `JSA_WORKFLOW_ACTION` evidence; no schema, migration, or workflow transition changed.
+
+## Accurate API startup port diagnostics (2026-07-29)
+
+- Preserved the original safe startup error message instead of replacing every non-recognized startup failure with a generic Oracle configuration hint.
+- Added specific `EADDRINUSE` and `EACCES` guidance so a duplicate API instance or operating-system port restriction is not misdiagnosed as an Oracle client/account problem.
+- Reproduced the reported startup failure and confirmed that PID `24072` already owned port `3000`; the existing API and Oracle readiness endpoints both remained healthy. No running process was stopped.
+
+## Submitted JSA attachment readback fix (2026-07-29)
+
+- Corrected the Oracle Draft aggregate mapper to return `LIBRARY_ASSET_VERSION_ID` as `libraryAssetVersionId` for every active `JSA_VERSION_ATTACHMENT`.
+- The persisted attachment association was already version-owned and preserved during workflow submission; the missing API field caused the read-only workflow worksheet to filter the attachment out after loading.
+- Added a repository regression that verifies the immutable Attachment Library version identifier and attachment metadata survive Oracle-row-to-API mapping. No schema, migration, workflow transition, or attachment versioning rule changed.
+- Follow-up inspection of affected UAT JSA `1000102` showed two association rows were soft-deactivated by a second aggregate save from the old running API/client state immediately before submission. They were not silently reactivated during active approval because that would bypass the confirmed workflow immutability rule; recovery requires Return, re-selection under the corrected API, and resubmission.
+
+## Rig-scoped Explorer attachment picker (2026-07-29)
+
+- Replaced the flat attachment checkbox modal in the one-screen JSA worksheet with a familiar Explorer layout: governed folder tree, breadcrumb navigation, current-folder filtering, folder cards, file cards, exact version labels, selected count, and clear empty/loading/error states.
+- Locked the picker context to the JSA's existing Site, Rig, and Department. The visible scope is read-only, the picker request carries all three identifiers, and returned folders are defensively restricted to the same identifiers before rendering.
+- Preserved exact immutable Attachment Library version selection. Creating folders, uploading, and replacing files remain exclusive to the separate Attachment Library administration interface.
+- Added responsive stacking for narrow screens, keyboard-focus styling, semantic folder buttons, accessible tree/navigation labels, and explicit attachment checkbox labels.
+
+## Confirmed PV Drilling Hazard Assessment Prompt seed (2026-07-29)
+
+- Added an idempotent Rig-scoped seed containing the exact 25 Hazard Assessment Prompt labels and visual order confirmed from the legacy JSAMS checklist.
+- Seeded all 25 prompts for `DEV-RIG` (`RIG_ID=1000000`) with Oracle sequence-owned IDs and soft-deactivated the three superseded global development fixtures (`Hazardous energy`, `Dropped objects`, and `Pinch points`) instead of deleting them.
+- Added a real-Oracle verifier for exact code/label/order and effective scope, plus static regressions for the full list and unique stable codes. No migration or Oracle object change was required.
+
+## Scoped development JSA test-data cleanup (2026-07-29)
+
+- Added a guarded development cleanup command that targets JSA aggregates by exact creator username and removes only their version children, workflow runtime rows, JSA-targeted notifications/outbox rows, Versions, and Masters in dependency order.
+- The command refuses production, requires an explicit username-matching confirmation, refuses Published target Versions, runs in one Oracle transaction, and verifies that no target JSA remains before commit.
+- Executed the cleanup for `phuclh`: removed 5 Draft Masters, 5 Versions, 1 workflow instance/task/action, 1 notification/outbox pair, and their exact prompts, Tasks, Hazards, Controls, Basic Job Step assignments, and attachment association.
+- Post-cleanup verification found zero JSA Masters for `phuclh` and four JSA Masters belonging to other users, confirming the cleanup did not broaden to other creators. Configuration and reference data were untouched.
+
+## Confirmed PV Drilling legacy 5x5 Matrix seed (2026-07-29)
+
+- Added a reusable, idempotent Oracle seed for the confirmed Probability and Severity terminology, four Risk Colour meanings/guidance rows, and the explicit 25-cell legacy mapping.
+- Preserved Matrix history by creating `DEV-5X5 / PVDRILLING-V2` instead of updating assigned `DEV-V1`; the prior Rig assignment was effective-ended and the new version was assigned atomically to Rig `1000000`.
+- Allocated the Matrix Version, axis, result, cell, and assignment identifiers from their governed Oracle sequences so site-range and GoldenGate invariants remain intact.
+- Added static seed regressions and a real-Oracle verifier that checks the exact terminology, Risk Colour metadata, active assignment, and all 25 cells.
+
+## Complete legacy-style Risk Matrix layout (2026-07-29)
+
+- Reworked the one-screen JSA Risk Matrix into the familiar four-part reference view: inline Probability definitions, inline Severity definitions, the governed matrix cells, and Risk Colour Overview are now visible together.
+- Restored the legacy matrix orientation labels with `SEVERITY` spanning the matrix columns and `PROBABILITY` displayed vertically beside the likelihood rows.
+- Removed the separate Probability/Severity information buttons and their reference-only modal from the Matrix heading. The row-level selection popups for Initial Probability, Initial Severity, and Residual Probability remain unchanged.
+- Added semantic reference tables and a horizontally reachable dense layout for narrower viewports. All labels, definitions, cells, colors, guidance, and prohibited rules continue to come from the exact applied Matrix Version; no hard-coded business values, API contract, migration, or Oracle object was added.
+
+## Matrix Risk Colour Overview in the JSA worksheet (2026-07-29)
+
+- Expanded the Risk Matrix legend in the one-screen JSA worksheet into a labeled `RISK COLOUR OVERVIEW` that displays each configured Risk Result's name, semantic meaning, description, operational guidance, color, and prohibited-Residual-Risk warning.
+- Reused the existing Matrix Version contract and the existing `JSA_RISK_RESULT` metadata (`DESCRIPTION`, `SEMANTIC_CATEGORY`, `DISPLAY_COLOR`, `GUIDANCE_TEXT`, and `PROHIBITED_FLAG`). The Risk Matrix administration editor already owns Semantic Meaning, Color Metadata, and Guidance entry, and the Draft API already resolves the exact applied Matrix Version.
+- Explicitly displays `Guidance not configured` when governed guidance is absent so missing configuration is visible rather than silently omitted. No new table, migration, Oracle object, API contract, or hard-coded color meaning was introduced.
+
+## Clear prohibited Residual Risk legend (2026-07-29)
+
+- Replaced the ambiguous inline `Prohibited residual` tag with a structured warning card inside the exact configured Risk Result legend row.
+- The warning now uses a semantic danger icon, the explicit heading `Not allowed as Residual Risk`, and the recovery instruction `Reduce the risk before submitting for approval.` The associated result row also receives a restrained danger-tinted background, so the warning is visibly tied to that result rather than appearing as another legend category.
+- Preserved configuration-driven behavior: only Risk Results whose matrix configuration has `prohibited = true` show the warning. Backend submission validation, Risk Matrix values, and persistence behavior are unchanged.
+
+## Readable JSA read-only fields (2026-07-29)
+
+- Replaced disabled text-field presentation with native read-only semantics for Job Title, Task, Hazard, Control, and Basic Job Step text/number fields whenever a JSA cannot be edited.
+- Read-only fields now retain near-black selectable text on the approved light-surface background instead of inheriting Ant Design's low-opacity disabled treatment. Editing remains blocked, while users can focus, select, and copy JSA content.
+- Buttons, checkboxes, risk selectors, assignment pickers, and destructive actions remain disabled when the document is read-only. No authorization, document-state, API, workflow, or persistence behavior changed.
+
+## Single-screen Workflow Review (2026-07-29)
+
+- Embedded the complete exact Working JSA Version directly in Workflow Review so an approver can review General Information, Hazard Prompts, Risk Matrix, Tasks/Hazards/Controls, Basic Job Steps, Attachments, and validation evidence without leaving the approval page.
+- Forced the embedded worksheet to read-only and removed the separate `Open read-only JSA` navigation action. The existing Approve, Return, Reject, and Comment controls remain on the same page and stay visible while scrolling on desktop.
+- Reused the JSA worksheet component in an embedded mode that suppresses duplicate authoring controls, save/submit actions, alerts, and approval-progress headers. Mobile keeps the action card in normal document flow.
+- Added regression coverage for the single-screen composition and read-only boundary. No API contract, migration, Oracle object, permission, workflow transition, or publication rule changed.
+
+## JSA approval progress bar (2026-07-29)
+
+- Added a reusable approval-status bar at the top of the one-screen JSA worksheet and Workflow Review screen. It presents Creator, the effective configured approval steps, and Published as a familiar directional sequence.
+- The bar resolves its approval steps from the existing workflow preview instead of hard-coding the optional route. Rig Manager therefore appears only when the effective JSA workflow includes that step; resolved assignee names appear beneath configured steps.
+- Added distinct text, icon, and color treatment for completed, current, upcoming, Returned, Rejected, Cancelled, and Published states. The route remains horizontally reachable on narrow screens and does not rely on color alone.
+- Reused the approved centralized palette and added the existing documented warning/danger semantic colors as CSS variables. No workflow, API, migration, Oracle, permission, or approval business rule changed.
+
+## Governed Attachment Library (2026-07-29)
+
+- Reworked Attachment Library administration into a Rig-level file explorer. The scope toolbar now stops at Site and Rig; accessible Departments appear as governed virtual root folders, nested attachment folders appear in a keyboard-operable tree, and the selected location displays folder/file cards with breadcrumb navigation and current-folder filtering.
+- Kept Department data scope and storage ownership unchanged behind the Explorer presentation. Create Folder uses the selected Department/folder location, while Upload remains available only inside a persisted attachment folder; no API, migration, Oracle object, filesystem, or GoldenGate behavior changed.
+- Corrected Attachment Library query bind sanitization so optional DTO properties never leak into Oracle folder or asset queries. `folderId` is now passed only to the filtered asset query when a folder is actually selected, preventing `ORA-01036` on the initial scoped page load and picker.
+- Added Site/Rig/Department-scoped nested folders, reusable logical assets, immutable file versions, SHA-256 metadata, exact-version JSA associations, and dedicated site-ranged Oracle sequences in migration 012.
+- Added the `attachment-library` API with permission/data-scope enforcement, mapped-filesystem atomic writes, governed file policy, versioned replacement, exact-version download, and audit events.
+- Added the Attachment Library administration screen and replaced manual JSA attachment metadata entry with an exact-scope library picker. Attachments remain optional.
+- Confirmed the deployment boundary: an external third-party product synchronizes binary files between site filesystems, while GoldenGate replicates Oracle metadata only.
+- Added a dedicated attachment sequence bootstrap, schema verification, repository/service regressions, and ADR-007.
+- Applied migration 012 to the configured Oracle environment, configured all three attachment sequence ranges for Site `1000000`, and verified the resulting schema. The first apply exposed and removed one redundant index definition before the clean reapply.
+
+## Removed Procedure Reference authoring (2026-07-29)
+
+- Removed the Procedure References card and its master-data query from the single-screen JSA worksheet; the remaining Attachment Metadata card now uses the full section width under the simplified `ATTACHMENTS` heading.
+- Normalized Procedure References to an empty collection in both frontend serialization and the API save boundary, so current Working Version saves cannot reintroduce hidden references and inherited legacy rows are deactivated.
+- Removed the no-Procedure-Reference validation warning. The historical Oracle table and read contract remain available for old version interpretation; no migration or Oracle object change was required.
+
+## Matrix-backed risk selection popups (2026-07-29)
+
+- Replaced the compact dropdowns for Initial Likelihood, Initial Severity, and Residual Likelihood with keyboard-accessible reference popup triggers in each Hazard row.
+- Each popup lists the active levels from the Draft's captured rig-specific Matrix Version using Category and Definition columns, highlights the current value, and applies the selected governed level immediately.
+- Centered the risk-selection popup against the viewport instead of using the library's fixed top offset, keeping the decision surface visually anchored on desktop and smaller screens.
+- Preserved Residual Severity as a disabled value inherited from Initial Severity. Risk result/rating resolution and save payload structure remain unchanged; no API, migration, or Oracle object change was required.
+
+## Simplified JSA General Information and Hazard Prompt selection (2026-07-29)
+
+- Reduced authorable JSA General Information to Job Title. Job Description, Permit to Work selection, and PTW reference are no longer rendered, accepted by Draft save DTOs, or written by the Draft repository.
+- Retained the legacy Oracle columns and historical read contract for backward compatibility; current Draft saves leave any historical Job Description/PTW values untouched, so no migration or Oracle object change was required.
+- Changed Hazard Assessment Prompts to independent one-click checkbox selections. The worksheet no longer presents or submits Task Hazard coverage mappings, selected prompts do not require coverage validation, and aggregate saves clear any legacy prompt-coverage rows.
+- Added frontend and API regression coverage for the narrowed header contract, one-click prompt behavior, empty coverage persistence, and continued validation of prohibited residual risk.
+
+## Professional LDAP sign-in presentation (2026-07-28)
+
+- Reworked the LDAP sign-in page into a responsive two-region enterprise entry experience: a restrained PV Drilling/JSAMS identity and product-context panel plus a focused authentication panel with clearer hierarchy, larger controls, and a single primary action.
+- Preserved all authentication behavior and security boundaries: credentials still go only to the LDAP login API, the password field is cleared after each attempt, no browser storage is introduced, and unregistered, inactive, unavailable-service, validation, and loading states remain visible.
+- Added centralized design tokens for existing approved neutral, mint, light-surface, and white-surface roles; the login page reuses the repository palette, ring elevation, spacing, radii, accessible labels, visible focus treatment, reduced-motion handling, and the approved PV Drilling logo.
+- Added a compact mobile layout below the established `768px` breakpoint while retaining the richer product-context panel on tablet, desktop, and large screens. No business, API, LDAP, or database behavior changed.
+
+## Atomic JSA Draft save and conflict recovery (2026-07-24)
+
+- Replaced the worksheet's two-request Header-then-Content save sequence with one aggregate `PUT /jsa-drafts/:id/save` operation.
+- The API now updates Header and Content inside the same Oracle transaction. The Version row value passed to Content is the deterministic successor of the Header value; any header, aggregate, validation, or optimistic-lock failure rolls the complete save back.
+- Corrected structural reference validation to enforce uniqueness within each aggregate entity type rather than across unrelated types. Independent Oracle sequences can legitimately produce the same numeric ID for a Task, Hazard, Control, Basic Step, Position snapshot, or Tool snapshot; those IDs now remain valid while duplicates inside the same type still fail closed.
+- Preserved the narrower Header and Content endpoints for compatibility, but the JSAMS worksheet no longer uses them for Save Draft.
+- Added a guarded one-time recovery for Draft screens carrying root row versions from a legacy partial save. The client fetches the latest aggregate and retries with its current root versions only when the loaded business baseline and every persisted child row-version fingerprint still match; it preserves the user's unsaved values and never retries a genuine concurrent business edit.
+- Added a specific `Reload latest` recovery action for genuine optimistic conflicts. It explicitly warns that unsaved screen changes will be discarded before refetching the current server version.
+- A controlled real-Oracle probe executed Header and Content in one transaction and then mandatorily rolled it back. The affected Draft remained at Master row version `4`, Version row version `6`, and child row version `1`, confirming that the current aggregate path succeeds and the reported repeat conflict came from stale screen metadata.
+- Added API transaction-order and frontend single-request/conflict-recovery regression coverage. No migration or Oracle object change was required.
+
+## PV Drilling branding and neutral section bars (2026-07-24)
+
+- Added the supplied approved PV Drilling logo as a repository-owned frontend asset and applied it to the application shell and LDAP sign-in screen while retaining the JSAMS product name.
+- Replaced the black application header with a clean white surface and dark text/actions so the supplied white-background logo integrates naturally. JSA worksheet section bars use the centralized warm dark gray `#454745` token instead of black.
+- Added accessible logo alternative text, responsive logo sizing, and frontend regression assertions for both branded entry points.
+
+## JSA General Information clarity (2026-07-24)
+
+- Replaced editable-looking General Information inputs for Status, Temporary JSA Number, Owner Site, Rig, and Department with semantic read-only presentation. Draft/Returned state is rendered as a badge, and ownership context is shown using governed code and name rather than numeric IDs.
+- Extended Draft detail retrieval to join the exact Site/Rig/Department hierarchy and return display codes/names through the shared contract.
+- Removed Location and Personnel from the worksheet, Draft header request contract, and update SQL. Existing nullable Oracle columns are retained and left untouched for historical compatibility; no migration or database object change was required.
+- Added focused API and frontend regression coverage for hierarchy-safe display metadata, the absence of editable raw ownership identifiers, and the absence of Location/Personnel authoring fields.
+
+## Official JSA numbering and organization administration (2026-07-24)
+
+- Separated Draft/approval Temporary numbers from immutable Official JSA numbers. Initial publication now allocates `<Rig code>-<Department code>-NNNN` inside the final approval transaction.
+- Added migration/rollback 011 with `JSA_MASTER.NUMBER_STATUS`, the concurrency-safe per-Rig/Department `JSA_NUMBER_COUNTER`, hierarchy constraints, bounded `0001`–`9999` values, and an Official-number immutability trigger.
+- Added governed Rig and Department administration APIs/screens under Operations. They enforce SYSTEM_ADMIN, independent data scope, active Site/Rig hierarchy, required audit, optimistic locking, immutable parent ownership, and deactivate/reactivate behavior.
+- Relabeled Draft UI values as Temporary numbers while Published queues continue to display the Official number.
+
+## Personal JSA Draft retrieval (2026-07-24)
+
+- Added a governed `My Drafts` API that returns only the authenticated creator's active Draft or Returned Working Versions within effective `CAN_VIEW` Site/Rig/Department data scope.
+- Added the `My Drafts` navigation entry and responsive list screen with JSA number, job, state, ownership context, last update, empty/error/loading states, and a direct action to continue the worksheet.
+- Changed Draft cancellation completion and `Exit` navigation to return to `My Drafts`, so a saved Working Version remains discoverable without entering an approval queue.
+- Added shared contracts and focused backend/frontend regression coverage. No migration or database object was required because the query uses existing JSA Master, Working Version, ownership, and security-scope data.
+
+## English-only unclassified JSA creation (2026-07-24)
+
+- Removed Job Type and Language from the Create JSA screen and API input. New source JSAs are unclassified by Job Type and the screen explains that English is assigned automatically.
+- Hardened the Create JSA submission boundary to construct an explicit three-field payload (`ownerSiteId`, `rigId`, and `departmentId`). Removed fields retained by an open Ant Form during hot reload can no longer be submitted and rejected as non-whitelisted request data.
+- Exposed safe validation messages and correlation IDs in the Create JSA error alert and API structured logs. Request validation failures now identify the rejected field/rule without logging submitted values.
+- Runtime diagnosis identified a stale API process that had held port 3000 since before the Create-JSA DTO change and still required `jobTypeId`. The exact listener was replaced with a new `@jsams/api` development process from current source; no frontend or Oracle data change was needed.
+- Replaced generic Draft-save failure feedback in development with persistent, actionable diagnostics: API error code/message, safe detail lines, Oracle code when available, and correlation ID. Unknown production errors remain generic, while structured server logs retain the real internal message for support diagnosis.
+- The API now resolves exactly one active `SYS_LANGUAGE` record with code `EN`, fails closed on missing or ambiguous configuration, and preserves the assigned language during later Draft header saves.
+- Added migration/rollback 010. The migration retains historical Job Type values, permits null Job Type for new versions, requires source language, and enforces active English through `TRG_JSA_VERSION_ENGLISH`.
+- Applied migration 010 to the development Oracle schema and extended schema verification for column nullability, trigger validity, migration state, and invalid source-language absence.
+- Added focused frontend and Oracle-repository regression tests for the no-selection UI and server-owned English assignment.
+
+## JSA Draft save correction (2026-07-24)
+
+- Corrected new aggregate inserts in the Oracle JSA Draft repository. Insert branches now omit update-only `rowVersion` binds, preventing `ORA-01036`, and Task/Basic Job Step number binds use non-reserved `taskNumber`/`stepNumber` names, preventing `ORA-01745`.
+- Corrected the Draft header update bind set as well: `rowVersion` belongs to the subsequent JSA Master update and is no longer passed to the `JSA_VERSION` statement, eliminating the observed `ORA-01036: unrecognized bind variable rowVersion`.
+- Added a repository regression test that exercises a complete new Draft aggregate: prompt, Task, Hazard, Control, prompt coverage, Basic Job Step, performer/supervisor Positions, Tool, procedure reference, and attachment.
+- Reproduced the original failure against Draft `DEV-1000000-1000007`, then verified the corrected header/content sequence on the real development Oracle schema inside an explicitly rolled-back transaction. No diagnostic business rows were retained.
+- `docs/state.md`, `docs/database-schema.md`, and `docs/DESIGN.md` were reviewed and not changed because this correction changes neither business behavior, schema, nor the design system.
+
+## LDAP authentication and administrator enablement (2026-07-23)
+
+- Locked each Hazard's Residual Severity to its Initial Severity in the single-page editor; changing Initial Severity synchronizes both values and the Residual S selector is disabled. Draft save, business validation, workflow submission, and migration 009 enforce the same invariant; migration 009 was applied and verified on the development Oracle schema.
+- Enforced the confirmed one-to-one Hazard/Control rule throughout JSA drafting. Every new Hazard now owns one Control editor; independent add/remove-Control actions were removed; draft save/validation and workflow submission reject zero or multiple Controls.
+- Added migration/rollback 008 with a fail-closed duplicate-data preflight and a function-based unique index that prevents more than one active Control per Hazard. Applied it to the development Oracle schema and extended general schema verification to check migration history, index validity, and duplicate absence.
+- Rebalanced the single-page Task/Hazard/Control grid with explicit column sizing: long-text Task/Hazard/Controls columns are wider while P/S/R and delete columns are compact. Corrected the last-hazard delete behavior so the containing Task is removed instead of silently rendering a replacement blank hazard.
+- Corrected assessment numbering to identify Tasks only as `1`, `2`, `3`, and so on. Additional Hazards within the same Task no longer receive misleading sub-numbers such as `1.2`.
+- Removed the redundant editable Task-number input. Task numbers and display order are now derived and resequenced after add, insert, or delete; each Task exposes a `+ Task` action that inserts a new Task immediately below it.
+- Added a production-blocked, transactional, idempotent full-approval UAT seed and verifier. The configured test user receives all active permissions through `SYSTEM_ADMIN`, Site-wide Department Head/STC/OIM/Rig Manager assignments, and an active four-step `UAT_FULL_APPROVAL` workflow/binding with audited changes.
+- Corrected the post-login Oracle assignment lookup to bind a concrete effective timestamp instead of an untyped null inside `COALESCE`, eliminating `ORA-00932` for registered users while preserving effective-period filtering.
+- Replaced the runtime service-account-first flow with the confirmed configurable Direct Bind strategy. Login now tries the submitted, normalized account, UPN, and NetBIOS forms, then reads the exact canonical identity and `objectGUID` through the authenticated connection. The optional service-search strategy remains available.
+- Replaced the uncompleted OIDC integration path with the confirmed internal Active Directory LDAP architecture. Added exact escaped directory lookup, service-account bind, user-DN credential validation, `objectGUID` mapping, fail-closed LDAP/environment validation, and production rejection of unencrypted LDAP.
+- Added signed, time-limited `HttpOnly`/`SameSite=Strict` JSAMS session cookies, active `SYS_USER` resolution on every request, login/logout endpoints, and a responsive LDAP login screen that never persists credentials in browser storage.
+- Added ADR-005 and aligned business state, architecture, deployment, README, and environment examples with the confirmed LDAP decision. Diagnosis found that the Domain Controller's LDAPS endpoint uses a legacy signature algorithm rejected by default Node/OpenSSL policy. Local UAT now uses LDAPS 636 with an explicit legacy-TLS compatibility flag; production rejects that flag and requires a current trusted certificate.
+- Added the idempotent `db:seed:ldap-admin` operational script. It resolves the approved `phuclh` Active Directory identity and `objectGUID`, uses the existing Site and `SYSTEM_ADMIN` Role, creates/aligns `SYS_USER`, assigns Site `VIEW/ACT`, and records immutable access-administration audit events without creating or storing a password.
+- Executed the approved seed on the development Oracle schema. `phuclh` is active with stable AD identity mapping, active `SYSTEM_ADMIN`, active Site `VIEW/ACT`, and three seed audit events; the repeat invocation returned `SKIPPED`.
+
+## Phase 4.5 — User Access Administration and Approval UAT Enablement (2026-07-23)
+
+- Added migration/rollback 007 with append-only access-administration audit, its explicit `NUMBER(19)` sequence, Site-range bootstrap/startup validation, immutable audit trigger, query indexes, and missing workflow step/role/actor/assignee snapshots. Existing evidence is backfilled and later profile/assignment changes do not rewrite it.
+- Made ordered OIDC identity, username, display-name, and email claims configurable. Added explicit username normalization, allowlisted domain stripping, production-required immutable identity mapping, production-disabled username fallback, and deterministic collision rejection.
+- Added the `access-administration` modular slice with `SYSTEM_ADMIN` guards, user lifecycle, custom Role lifecycle, existing Permission catalogue, Role/User/Permission/override/scope/workflow-role assignments, optimistic locking, hierarchy validation, effective-access evaluation, exact Phase 4 approver preview, UAT readiness, pending-task stranding protection, and transactional durable audit.
+- Added protected administration routes/screens for application-user registration/detail, governed assignments, Roles/Permissions, Effective Access, Pending Impact, Approver Resolution, UAT Readiness, and read-only Access Audit. There are no credential, password-reset, directory-administration, provisioning, synchronization, or impersonation features.
+- Applied migration 007 on the development Oracle schema, corrected a PL/SQL delimiter exposed by non-transactional DDL, performed controlled rollback/reapply, configured only the audit sequence range, and verified snapshots/audit on Oracle. No production user, Role, Permission, scope, workflow assignment, approver, definition, or binding was seeded.
+- `docs/state.md` was reviewed and not changed because implementation introduced no newly confirmed business decision. `docs/DESIGN.md` and `docs/AGENTS.md` were reviewed and not changed because no durable design-system or documentation-governance rule changed.
+
 ## Phase 4 — Approval Workflow and Initial Publishing (2026-07-23)
 
 - Added migration/rollback 006 with versioned definitions, ordered steps, approved-dimension bindings, independent workflow-role assignments, instances/tasks/actions, notification/outbox records, publication metadata, nine sequences, and Published immutability triggers.

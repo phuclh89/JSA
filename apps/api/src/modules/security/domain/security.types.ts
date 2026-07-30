@@ -4,7 +4,9 @@ export interface EnterprisePrincipal {
   identityKey: string;
   username: string;
   displayName?: string;
-  mode: 'development' | 'oidc';
+  email?: string;
+  mode: 'development' | 'ldap';
+  allowUsernameFallback?: boolean;
   sessionExpiresAt?: string;
 }
 

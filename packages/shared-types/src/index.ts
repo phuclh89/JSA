@@ -12,7 +12,7 @@ export interface AuthenticatedUser {
   permissionOverrides: PermissionOverride[];
   dataScopes: DataScope[];
   authentication: {
-    mode: 'development' | 'oidc';
+    mode: 'development' | 'ldap';
     sessionExpiresAt?: string;
   };
 }
@@ -99,6 +99,23 @@ export interface OrganizationOption {
   name: string;
   siteId?: string;
   rigId?: string;
+}
+
+export type OrganizationKind = 'rigs' | 'departments';
+
+export interface OrganizationRecord {
+  id: string;
+  kind: OrganizationKind;
+  code: string;
+  name: string;
+  siteId: string;
+  siteCode: string;
+  siteName: string;
+  rigId?: string;
+  rigCode?: string;
+  rigName?: string;
+  active: boolean;
+  rowVersion: string;
 }
 
 export interface RiskMatrixSummary {
@@ -234,24 +251,46 @@ export interface JsaDraftCapabilities {
 export interface JsaDraftHeader {
   jsaId: string;
   versionId: string;
+  versionNumber?: number;
   jsaNumber: string;
   lifecycleStatus: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
   versionStatus: JsaVersionStatus;
   ownerSiteId: string;
+  ownerSiteCode: string;
+  ownerSiteName: string;
   rigId: string;
+  rigCode: string;
+  rigName: string;
   departmentId: string;
-  jobTypeId: string;
+  departmentCode: string;
+  departmentName: string;
+  jobTypeId?: string;
   matrixVersionId: string;
-  languageId?: string;
+  languageId: string;
+  languageCode?: string;
+  languageName?: string;
+  publishedAt?: string;
   jobTitle?: string;
   jobDescription?: string;
-  location?: string;
-  personnel?: string;
   ptwRequired: boolean;
   ptwReference?: string;
   creatorUserId: string;
   rowVersion: string;
   versionRowVersion: string;
+}
+export interface JsaDraftListItem {
+  jsaId: string;
+  versionId: string;
+  jsaNumber: string;
+  jobTitle?: string;
+  versionStatus: 'DRAFT' | 'RETURNED';
+  ownerSiteCode: string;
+  ownerSiteName: string;
+  rigCode: string;
+  rigName: string;
+  departmentCode: string;
+  departmentName: string;
+  updatedAt: string;
 }
 export interface JsaDraftPrompt {
   id: string;
@@ -346,12 +385,39 @@ export interface JsaDraftProcedureReference {
 export interface JsaDraftAttachment {
   id: string;
   logicalKey: string;
+  libraryAssetVersionId?: string;
   fileName: string;
   contentType?: string;
   fileSize?: string;
   storageKey?: string;
   status: 'METADATA_ONLY' | 'STORED' | 'FAILED' | 'REMOVED';
   description?: string;
+  rowVersion: string;
+}
+
+export interface AttachmentLibraryFolder {
+  id: string;
+  siteId: string;
+  rigId: string;
+  departmentId: string;
+  parentFolderId?: string;
+  name: string;
+  active: boolean;
+  rowVersion: string;
+}
+
+export interface AttachmentLibraryAsset {
+  id: string;
+  folderId: string;
+  name: string;
+  description?: string;
+  currentVersionId: string;
+  versionNumber: number;
+  originalFileName: string;
+  contentType: string;
+  fileSize: string;
+  sha256: string;
+  active: boolean;
   rowVersion: string;
 }
 export interface JsaPromptCoverage {

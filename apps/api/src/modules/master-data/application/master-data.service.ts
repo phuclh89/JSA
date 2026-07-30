@@ -3,6 +3,8 @@ import type {
   AuthenticatedUser,
   MasterDataKind,
   MasterDataRecord,
+  OrganizationKind,
+  OrganizationRecord,
   PaginatedResponse,
 } from '@jsams/shared-types';
 import {
@@ -25,6 +27,8 @@ import {
   type MasterDataInput,
   type MasterDataListQuery,
   type MasterDataMutation,
+  ORGANIZATION_KINDS,
+  type OrganizationInput,
 } from '../domain/master-data.types';
 import { validateSystemParameter } from '../domain/system-parameter-validation';
 
@@ -41,6 +45,133 @@ export class MasterDataService {
     if (!MASTER_DATA_KINDS.includes(value as MasterDataKind))
       throw new ResourceNotFoundError('Master-data catalogue was not found');
     return value as MasterDataKind;
+  }
+
+  assertOrganizationKind(value: string): OrganizationKind {
+    if (!ORGANIZATION_KINDS.includes(value as OrganizationKind))
+      throw new ResourceNotFoundError('Organization catalogue was not found');
+    return value as OrganizationKind;
+  }
+
+  async listOrganizations(
+    kind: OrganizationKind,
+    query: MasterDataListQuery,
+    user: AuthenticatedUser,
+  ): Promise<PaginatedResponse<OrganizationRecord>> {
+    return this.oracle.withTransaction(async (context) => {
+      const page = await this.repository.listOrganizations(context, kind, query);
+      const items = page.items.filter((item) => this.canAccessOrganization(user, item, 'VIEW'));
+      return {
+        ...page,
+        items,
+        total: items.length === page.items.length ? page.total : items.length,
+      };
+    });
+  }
+
+  async createOrganization(
+    kind: OrganizationKind,
+    input: OrganizationInput,
+    user: AuthenticatedUser,
+  ): Promise<OrganizationRecord> {
+    this.validateOrganizationInput(kind, input);
+    return this.write(async (context) => {
+      if (!(await this.repository.validateOrganizationParent(context, kind, input)))
+        throw new ValidationError('The selected Site/Rig hierarchy is invalid or inactive');
+      if (!this.canAccessOrganization(user, { ...input, kind }, 'ACT'))
+        throw new DataScopeDeniedError();
+      const created = await this.repository.createOrganization(context, kind, input, user.username);
+      await this.audit.recordRequired({
+        actorUserId: user.userId,
+        enterpriseUsername: user.username,
+        actionCode: 'ORGANIZATION_CREATED',
+        targetType: kind,
+        targetId: created.id,
+        siteId: created.siteId,
+        rigId: kind === 'rigs' ? created.id : created.rigId,
+        nextState: created,
+      });
+      return created;
+    });
+  }
+
+  async updateOrganization(
+    kind: OrganizationKind,
+    id: string,
+    input: OrganizationInput & { rowVersion?: string },
+    user: AuthenticatedUser,
+  ): Promise<OrganizationRecord> {
+    assertOracleId(id);
+    this.validateOrganizationInput(kind, input);
+    if (!input.rowVersion) throw new ValidationError('rowVersion is required');
+    const rowVersion = input.rowVersion;
+    return this.write(async (context) => {
+      const before = await this.repository.findOrganizationById(context, kind, id);
+      if (!before) throw new ResourceNotFoundError();
+      if (before.siteId !== input.siteId || before.rigId !== input.rigId)
+        throw new ValidationError('An organization record cannot be moved to another parent');
+      if (!this.canAccessOrganization(user, before, 'ACT')) throw new DataScopeDeniedError();
+      if (!(await this.repository.validateOrganizationParent(context, kind, input)))
+        throw new ValidationError('The selected Site/Rig hierarchy is invalid or inactive');
+      const updated = await this.repository.updateOrganization(
+        context,
+        kind,
+        id,
+        input,
+        rowVersion,
+        user.username,
+      );
+      if (!updated) throw new OptimisticLockError();
+      await this.audit.recordRequired({
+        actorUserId: user.userId,
+        enterpriseUsername: user.username,
+        actionCode: 'ORGANIZATION_UPDATED',
+        targetType: kind,
+        targetId: id,
+        siteId: updated.siteId,
+        rigId: kind === 'rigs' ? updated.id : updated.rigId,
+        previousState: before,
+        nextState: updated,
+      });
+      return updated;
+    });
+  }
+
+  async setOrganizationActive(
+    kind: OrganizationKind,
+    id: string,
+    active: boolean,
+    rowVersion: string,
+    user: AuthenticatedUser,
+  ): Promise<OrganizationRecord> {
+    assertOracleId(id);
+    assertOracleId(rowVersion, 'rowVersion');
+    return this.write(async (context) => {
+      const before = await this.repository.findOrganizationById(context, kind, id);
+      if (!before) throw new ResourceNotFoundError();
+      if (!this.canAccessOrganization(user, before, 'ACT')) throw new DataScopeDeniedError();
+      const updated = await this.repository.setOrganizationActive(
+        context,
+        kind,
+        id,
+        active,
+        rowVersion,
+        user.username,
+      );
+      if (!updated) throw new OptimisticLockError();
+      await this.audit.recordRequired({
+        actorUserId: user.userId,
+        enterpriseUsername: user.username,
+        actionCode: active ? 'ORGANIZATION_REACTIVATED' : 'ORGANIZATION_DEACTIVATED',
+        targetType: kind,
+        targetId: id,
+        siteId: updated.siteId,
+        rigId: kind === 'rigs' ? updated.id : updated.rigId,
+        previousState: before,
+        nextState: updated,
+      });
+      return updated;
+    });
   }
 
   async scopeOptions(
@@ -256,6 +387,37 @@ export class MasterDataService {
       throw new ValidationError('Department scope is not supported for this catalogue');
     if (kind === 'system-parameters')
       validateSystemParameter(input.code, input.attributes.valueType, input.attributes.value);
+  }
+
+  private validateOrganizationInput(kind: OrganizationKind, input: OrganizationInput): void {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(input.code.trim()))
+      throw new ValidationError('Code may contain only letters, numbers, underscore, and hyphen');
+    if (!input.name.trim()) throw new ValidationError('Name is required');
+    assertOracleId(input.siteId, 'siteId');
+    if (kind === 'rigs' && input.rigId) throw new ValidationError('A Rig cannot have a parent Rig');
+    if (kind === 'departments' && !input.rigId)
+      throw new ValidationError('A Rig is required for a Department used by JSA');
+    if (input.rigId) assertOracleId(input.rigId, 'rigId');
+  }
+
+  private canAccessOrganization(
+    user: AuthenticatedUser,
+    record: Pick<OrganizationRecord, 'kind' | 'siteId' | 'rigId'> & { id?: string },
+    access: 'VIEW' | 'ACT',
+  ): boolean {
+    return this.scopes.allows(
+      user,
+      record.kind === 'rigs' && !record.id
+        ? { scopeType: 'SITE', siteId: record.siteId }
+        : record.kind === 'rigs'
+          ? { scopeType: 'RIG', siteId: record.siteId, rigId: record.id }
+          : {
+              scopeType: 'RIG',
+              siteId: record.siteId,
+              rigId: record.rigId!,
+            },
+      access,
+    );
   }
 
   private canAccess(

@@ -22,7 +22,7 @@ export class UserContextService {
         transaction,
         principal.identityKey,
         principal.username,
-        principal.mode === 'development',
+        Boolean(principal.allowUsernameFallback),
       );
       if (!user) throw new ApplicationUserNotRegisteredError();
       if (!user.active) throw new ApplicationUserInactiveError();

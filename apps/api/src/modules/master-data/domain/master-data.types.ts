@@ -1,6 +1,8 @@
 import type {
   MasterDataKind,
   MasterDataRecord,
+  OrganizationKind,
+  OrganizationRecord,
   PaginatedResponse,
   ReferenceScopeType,
 } from '@jsams/shared-types';
@@ -33,6 +35,14 @@ export interface MasterDataMutation extends MasterDataInput {
 }
 
 export type MasterDataPage = PaginatedResponse<MasterDataRecord>;
+export type OrganizationPage = PaginatedResponse<OrganizationRecord>;
+
+export interface OrganizationInput {
+  code: string;
+  name: string;
+  siteId: string;
+  rigId?: string;
+}
 
 export const MASTER_DATA_KINDS: MasterDataKind[] = [
   'job-types',
@@ -44,3 +54,5 @@ export const MASTER_DATA_KINDS: MasterDataKind[] = [
   'procedure-references',
   'system-parameters',
 ];
+
+export const ORGANIZATION_KINDS: OrganizationKind[] = ['rigs', 'departments'];

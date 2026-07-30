@@ -13,7 +13,10 @@ import { oracleErrorCode } from '../oracle/oracle-client';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
-  constructor(private readonly logger: JsonLogger) {}
+  constructor(
+    private readonly logger: JsonLogger,
+    private readonly environment = 'production',
+  ) {}
   catch(exception: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<Response>();
     const correlationId = correlationContext.getStore()?.correlationId ?? 'unknown';
@@ -21,6 +24,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let code = 'INTERNAL_ERROR';
     let message = 'An unexpected error occurred';
     let details: unknown[] = [];
+    const internalMessage =
+      exception instanceof Error
+        ? exception.message
+        : typeof (exception as { message?: unknown })?.message === 'string'
+          ? String((exception as { message: string }).message)
+          : String(exception);
 
     if (exception instanceof ApplicationError) {
       status = exception.getStatus();
@@ -50,6 +59,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         message = exception.message;
       }
     }
+    if (code === 'INTERNAL_ERROR' && this.environment !== 'production') {
+      message = internalMessage;
+      details = [internalMessage];
+    }
 
     this.logger.error(
       {
@@ -57,7 +70,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         result: 'failure',
         errorCode: code,
         oracleErrorCode: oracleErrorCode(exception),
-        message: code === 'INTERNAL_ERROR' ? 'Unhandled request failure' : message,
+        ...(code === 'VALIDATION_ERROR' ? { validationDetails: details.map(String) } : {}),
+        message: code === 'INTERNAL_ERROR' ? internalMessage : message,
       },
       undefined,
       GlobalExceptionFilter.name,

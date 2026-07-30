@@ -1,24 +1,37 @@
 import {
   Alert,
+  Breadcrumb,
   Button,
   Card,
   Checkbox,
-  Form,
+  Empty,
   Input,
   Modal,
-  Select,
   Space,
   Spin,
   Tag,
   Transfer,
+  Tree,
   Typography,
   message,
 } from 'antd';
 import {
+  CheckOutlined,
   DeleteOutlined,
-  InfoCircleOutlined,
+  ExclamationCircleOutlined,
+  FileExcelOutlined,
+  FileImageOutlined,
+  FileOutlined,
+  FilePdfOutlined,
+  FilePptOutlined,
+  FileWordOutlined,
+  FolderOpenOutlined,
+  FolderOutlined,
+  HomeOutlined,
   PlusCircleOutlined,
+  PlusOutlined,
   SaveOutlined,
+  SearchOutlined,
   ToolOutlined,
   UserOutlined,
 } from '@ant-design/icons';
@@ -33,11 +46,16 @@ import type {
   JsaPositionSnapshot,
   JsaToolSnapshot,
   JsaValidationResult,
+  AttachmentLibraryAsset,
+  AttachmentLibraryFolder,
   MasterDataRecord,
+  RiskAxisLevel,
 } from '@jsams/shared-types';
 import type { ApiClientError } from '../../services/api-client';
 import { jsaApi } from './jsa-api';
 import { workflowApi } from './workflow-api';
+import { ApprovalProgress } from './approval-progress';
+import { ApprovalHistory } from './approval-history';
 import './jsa-draft.css';
 
 const fresh = () => `new-${crypto.randomUUID()}`;
@@ -50,7 +68,13 @@ const meta = (value: { id: string; rowVersion: string }) => ({
 type DraftUpdater = (fn: (draft: JsaDraftDetail) => JsaDraftDetail) => void;
 type PickerKind = 'performers' | 'supervisors' | 'tools';
 
-export function JsaDraftEditor() {
+export function JsaDraftEditor({
+  embedded = false,
+  forceReadOnly = false,
+}: {
+  embedded?: boolean;
+  forceReadOnly?: boolean;
+} = {}) {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -58,6 +82,17 @@ export function JsaDraftEditor() {
   const [draft, setDraft] = useState<JsaDraftDetail>();
   const [dirty, setDirty] = useState(false);
   const [validation, setValidation] = useState<JsaValidationResult>();
+  const [saveError, setSaveError] = useState<ApiClientError>();
+  const workflowPreview = useQuery({
+    queryKey: ['workflow-preview', id],
+    queryFn: () => workflowApi.preview(id),
+    enabled: Boolean(query.data) && !embedded,
+  });
+  const returnedWorkflow = useQuery({
+    queryKey: ['workflow-detail', id],
+    queryFn: () => workflowApi.detail(id),
+    enabled: query.data?.versionStatus === 'RETURNED' && !embedded,
+  });
 
   useEffect(() => {
     if (query.data && !dirty) setDraft(query.data);
@@ -78,36 +113,37 @@ export function JsaDraftEditor() {
     setDirty(true);
   };
   const save = useMutation({
+    onMutate: () => setSaveError(undefined),
     mutationFn: async () => {
       const current = draft!;
-      const header = await jsaApi.header(id, {
-        rowVersion: current.rowVersion,
-        versionRowVersion: current.versionRowVersion,
-        jobTypeId: current.jobTypeId,
-        languageId: current.languageId,
-        jobTitle: current.jobTitle,
-        jobDescription: current.jobDescription,
-        location: current.location,
-        personnel: current.personnel,
-        ptwRequired: current.ptwRequired,
-        ptwReference: current.ptwReference,
-      });
-      return jsaApi.content(
-        id,
-        serialize({
-          ...current,
-          rowVersion: header.rowVersion,
-          versionRowVersion: header.versionRowVersion,
-        }),
-      );
+      try {
+        return await jsaApi.save(id, savePayload(current));
+      } catch (error) {
+        const apiError = error as ApiClientError;
+        if (apiError.code !== 'OPTIMISTIC_LOCK_CONFLICT') throw error;
+        const latest = await jsaApi.detail(id);
+        if (!canRetryRootVersionConflict(current, latest, query.data)) throw error;
+        return jsaApi.save(
+          id,
+          savePayload(current, {
+            rowVersion: latest.rowVersion,
+            versionRowVersion: latest.versionRowVersion,
+          }),
+        );
+      }
     },
     onSuccess: (saved) => {
       setDraft(saved);
       setDirty(false);
+      setSaveError(undefined);
       void queryClient.invalidateQueries({ queryKey: ['jsa-draft', id] });
       message.success('JSA draft saved');
     },
-    onError: (error) => message.error((error as ApiClientError).message),
+    onError: (error) => {
+      const apiError = error as ApiClientError;
+      setSaveError(apiError);
+      message.error(`Draft save failed: ${apiError.message}`);
+    },
   });
   const validate = useMutation({
     mutationFn: () => jsaApi.validate(id),
@@ -120,7 +156,7 @@ export function JsaDraftEditor() {
         rowVersion: draft!.rowVersion,
         versionRowVersion: draft!.versionRowVersion,
       }),
-    onSuccess: () => navigate('/browse'),
+    onSuccess: () => navigate('/jsa/drafts'),
     onError: (error) => message.error((error as ApiClientError).message),
   });
   const submit = useMutation({
@@ -150,7 +186,10 @@ export function JsaDraftEditor() {
         return;
       }
       Modal.confirm({
-        title: current.versionStatus === 'RETURNED' ? 'Resubmit JSA for approval?' : 'Submit JSA for approval?',
+        title:
+          current.versionStatus === 'RETURNED'
+            ? 'Resubmit JSA for approval?'
+            : 'Submit JSA for approval?',
         width: 620,
         content: (
           <div>
@@ -171,15 +210,53 @@ export function JsaDraftEditor() {
       message.error((error as ApiClientError).message ?? 'Submission preparation failed');
     }
   };
+  const reloadLatest = () =>
+    Modal.confirm({
+      title: 'Reload the latest Draft?',
+      content:
+        'Your unsaved changes on this screen will be discarded and the latest saved version will be loaded.',
+      okText: 'Reload latest',
+      onOk: async () => {
+        const result = await query.refetch();
+        if (result.data) {
+          setDraft(result.data);
+          setDirty(false);
+          setSaveError(undefined);
+          message.success('Latest Draft loaded');
+        }
+      },
+    });
 
   if (query.isLoading || !draft) return <Spin aria-label="Loading JSA Draft" />;
   if (query.error)
     return <Alert type="error" showIcon message={(query.error as ApiClientError).message} />;
 
-  const disabled = !draft.editable;
+  const disabled = forceReadOnly || !draft.editable;
   const validationCount = validation
     ? validation.errors.length + validation.warnings.length
     : undefined;
+  const worksheet = (
+    <>
+      <GeneralSection draft={draft} disabled={disabled} update={update} />
+      <PromptSection draft={draft} disabled={disabled} update={update} />
+      <RiskReferenceSection draft={draft} />
+      <TaskRiskSection draft={draft} disabled={disabled} update={update} />
+      <BasicStepSection draft={draft} disabled={disabled} update={update} />
+      <ReferenceAttachmentSection draft={draft} disabled={disabled} update={update} />
+      <ValidationSection result={validation} />
+    </>
+  );
+
+  if (embedded)
+    return (
+      <section
+        className="jsa-editor jsa-worksheet jsa-worksheet--embedded"
+        aria-label="Complete JSA worksheet"
+      >
+        {worksheet}
+      </section>
+    );
+
   return (
     <main className="jsa-editor jsa-worksheet">
       <header className="jsa-editor-heading">
@@ -187,8 +264,8 @@ export function JsaDraftEditor() {
           <Typography.Text className="eyebrow">CREATE JSA · WORKING VERSION</Typography.Text>
           <Typography.Title level={1}>{draft.jsaNumber}</Typography.Title>
           <Space wrap>
-            <Tag color={draft.lifecycleStatus === 'DRAFT' ? 'lime' : 'default'}>
-              {draft.lifecycleStatus}
+            <Tag color={draft.versionStatus === 'DRAFT' ? 'lime' : 'orange'}>
+              {draft.versionStatus}
             </Tag>
             <Tag>
               {draft.matrix.matrixCode} / {draft.matrix.versionCode} · {draft.matrix.dimension}×
@@ -197,25 +274,42 @@ export function JsaDraftEditor() {
             {dirty && <Tag color="orange">Unsaved changes</Tag>}
           </Space>
         </div>
-        <Space wrap className="worksheet-top-actions">
-          <Button
-            onClick={() => validate.mutate()}
-            loading={validate.isPending}
-            aria-label="Validate the complete JSA"
-          >
-            Validate{validationCount !== undefined ? ` (${validationCount})` : ''}
-          </Button>
-          <Button
-            type="primary"
-            icon={<SaveOutlined />}
-            disabled={disabled || !dirty}
-            loading={save.isPending}
-            onClick={() => save.mutate()}
-          >
-            Save Draft
-          </Button>
-        </Space>
+        {!disabled ? (
+          <Space wrap className="worksheet-top-actions">
+            <Button
+              onClick={() => validate.mutate()}
+              loading={validate.isPending}
+              aria-label="Validate the complete JSA"
+            >
+              Validate{validationCount !== undefined ? ` (${validationCount})` : ''}
+            </Button>
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              disabled={!dirty}
+              loading={save.isPending}
+              onClick={() => save.mutate()}
+            >
+              Save Draft
+            </Button>
+          </Space>
+        ) : null}
       </header>
+
+      <ApprovalProgress
+        versionStatus={draft.versionStatus}
+        steps={workflowPreview.data?.steps}
+        loading={workflowPreview.isLoading}
+        configured={workflowPreview.data?.configured}
+      />
+
+      {draft.versionStatus === 'RETURNED' && !embedded ? (
+        <ApprovalHistory
+          actions={returnedWorkflow.data?.actions}
+          loading={returnedWorkflow.isLoading}
+          error={Boolean(returnedWorkflow.error)}
+        />
+      ) : null}
 
       {disabled && (
         <Alert
@@ -226,60 +320,87 @@ export function JsaDraftEditor() {
         />
       )}
 
-      <GeneralSection draft={draft} disabled={disabled} update={update} />
-      <PromptSection draft={draft} disabled={disabled} update={update} />
-      <RiskReferenceSection draft={draft} />
-      <TaskRiskSection draft={draft} disabled={disabled} update={update} />
-      <BasicStepSection draft={draft} disabled={disabled} update={update} />
-      <ReferenceAttachmentSection draft={draft} disabled={disabled} update={update} />
-      <ValidationSection result={validation} />
+      {saveError && (
+        <Alert
+          type="error"
+          showIcon
+          action={
+            saveError.code === 'OPTIMISTIC_LOCK_CONFLICT' ? (
+              <Button onClick={reloadLatest}>Reload latest</Button>
+            ) : undefined
+          }
+          message={`Draft save failed — ${saveError.code}`}
+          description={
+            <Space direction="vertical" size={0}>
+              <Typography.Text>{saveError.message}</Typography.Text>
+              {saveError.details
+                .map(String)
+                .filter((detail) => detail && detail !== saveError.message)
+                .map((detail) => (
+                  <Typography.Text key={detail}>{detail}</Typography.Text>
+                ))}
+              {saveError.correlationId && (
+                <Typography.Text type="secondary">
+                  Correlation ID: {saveError.correlationId}
+                </Typography.Text>
+              )}
+            </Space>
+          }
+        />
+      )}
+
+      {worksheet}
 
       <footer className="worksheet-footer">
         <div>
-          <strong>{dirty ? 'Unsaved changes' : 'Draft saved'}</strong>
+          <strong>{disabled ? 'Read-only JSA' : dirty ? 'Unsaved changes' : 'Draft saved'}</strong>
           <span>
-            {validation?.valid
-              ? 'Validation passed'
-              : validation
-                ? `${validation.errors.length} blocking issue(s)`
-                : 'Run validation before submission'}
+            {disabled
+              ? 'Content is locked for viewing.'
+              : validation?.valid
+                ? 'Validation passed'
+                : validation
+                  ? `${validation.errors.length} blocking issue(s)`
+                  : 'Run validation before submission'}
           </span>
         </div>
         <Space wrap>
-          <Button onClick={() => navigate('/browse')}>Exit</Button>
-          <Button
-            danger
-            disabled={disabled}
-            loading={cancel.isPending}
-            onClick={() =>
-              Modal.confirm({
-                title: 'Cancel this JSA draft?',
-                content: 'The draft and its history will be retained and become read-only.',
-                okText: 'Cancel draft',
-                okButtonProps: { danger: true },
-                onOk: () => cancel.mutate(),
-              })
-            }
-          >
-            Cancel Draft
-          </Button>
-          <Button
-            type="primary"
-            icon={<SaveOutlined />}
-            disabled={disabled || !dirty}
-            loading={save.isPending}
-            onClick={() => save.mutate()}
-          >
-            Save Draft
-          </Button>
-          <Button
-            type="primary"
-            disabled={disabled}
-            loading={submit.isPending || save.isPending}
-            onClick={() => void prepareSubmission()}
-          >
-            Save & Submit for Approval
-          </Button>
+          <Button onClick={() => navigate('/jsa/drafts')}>Exit</Button>
+          {!disabled ? (
+            <>
+              <Button
+                danger
+                loading={cancel.isPending}
+                onClick={() =>
+                  Modal.confirm({
+                    title: 'Cancel this JSA draft?',
+                    content: 'The draft and its history will be retained and become read-only.',
+                    okText: 'Cancel draft',
+                    okButtonProps: { danger: true },
+                    onOk: () => cancel.mutate(),
+                  })
+                }
+              >
+                Cancel Draft
+              </Button>
+              <Button
+                type="primary"
+                icon={<SaveOutlined />}
+                disabled={!dirty}
+                loading={save.isPending}
+                onClick={() => save.mutate()}
+              >
+                Save Draft
+              </Button>
+              <Button
+                type="primary"
+                loading={submit.isPending || save.isPending}
+                onClick={() => void prepareSubmission()}
+              >
+                Save & Submit for Approval
+              </Button>
+            </>
+          ) : null}
         </Space>
       </footer>
     </main>
@@ -321,75 +442,44 @@ function GeneralSection({
     <section className="worksheet-section" aria-labelledby="general-section">
       <SectionTitle title="JSA GENERAL INFORMATION" />
       <div className="worksheet-general-grid">
-        <label>
+        <div className="worksheet-readonly-field">
           <span>Status</span>
-          <Input value={draft.lifecycleStatus} readOnly />
-        </label>
-        <label>
-          <span>JSA Number</span>
-          <Input value={draft.jsaNumber} readOnly />
-        </label>
-        <label>
-          <span>Owner Site ID</span>
-          <Input value={draft.ownerSiteId} readOnly />
-        </label>
-        <label>
-          <span>Rig ID</span>
-          <Input value={draft.rigId} readOnly />
-        </label>
-        <label>
-          <span>Department ID</span>
-          <Input value={draft.departmentId} readOnly />
-        </label>
-        <label>
-          <span>Location</span>
-          <Input
-            disabled={disabled}
-            value={draft.location}
-            onChange={(event) => field('location', event.target.value)}
-          />
-        </label>
+          <div className="worksheet-readonly-value">
+            <Tag color={draft.versionStatus === 'DRAFT' ? 'lime' : 'orange'}>
+              {draft.versionStatus}
+            </Tag>
+          </div>
+        </div>
+        <div className="worksheet-readonly-field">
+          <span>Temporary JSA Number</span>
+          <strong className="worksheet-readonly-value">{draft.jsaNumber}</strong>
+        </div>
+        <div className="worksheet-readonly-field">
+          <span>Owner Site</span>
+          <strong className="worksheet-readonly-value">
+            {draft.ownerSiteCode} — {draft.ownerSiteName}
+          </strong>
+        </div>
+        <div className="worksheet-readonly-field">
+          <span>Rig</span>
+          <strong className="worksheet-readonly-value">
+            {draft.rigCode} — {draft.rigName}
+          </strong>
+        </div>
+        <div className="worksheet-readonly-field">
+          <span>Department</span>
+          <strong className="worksheet-readonly-value">
+            {draft.departmentCode} — {draft.departmentName}
+          </strong>
+        </div>
         <label className="span-2">
           <span>Job Title *</span>
           <Input
-            disabled={disabled}
+            readOnly={disabled}
             value={draft.jobTitle}
             onChange={(event) => field('jobTitle', event.target.value)}
           />
         </label>
-        <label>
-          <span>Personnel</span>
-          <Input
-            disabled={disabled}
-            value={draft.personnel}
-            onChange={(event) => field('personnel', event.target.value)}
-          />
-        </label>
-        <label className="span-full">
-          <span>Job Description</span>
-          <Input.TextArea
-            disabled={disabled}
-            rows={3}
-            value={draft.jobDescription}
-            onChange={(event) => field('jobDescription', event.target.value)}
-          />
-        </label>
-        <div className="worksheet-ptw">
-          <Checkbox
-            disabled={disabled}
-            checked={draft.ptwRequired}
-            onChange={(event) => field('ptwRequired', event.target.checked)}
-          >
-            Permit to Work required
-          </Checkbox>
-          <Input
-            disabled={disabled || !draft.ptwRequired}
-            aria-label="Permit to Work reference"
-            placeholder="PTW reference"
-            value={draft.ptwReference}
-            onChange={(event) => field('ptwReference', event.target.value)}
-          />
-        </div>
       </div>
     </section>
   );
@@ -409,7 +499,6 @@ function PromptSection({
     queryKey: ['jsa-options', 'hazard-prompts', suffix],
     queryFn: () => jsaApi.options<MasterDataRecord>('hazard-prompts', suffix),
   });
-  const hazards = draft.tasks.flatMap((task) => task.hazards);
   const toggle = (record: MasterDataRecord, selected: boolean) =>
     update((current) => {
       const existing = current.prompts.find((item) => item.promptId === record.id);
@@ -431,13 +520,57 @@ function PromptSection({
           ];
       return { ...current, prompts };
     });
+  const currentPromptIds = new Set((options.data ?? []).map((record) => record.id));
+  const readonlyPrompts = [
+    ...(options.data ?? []).map((record) => ({
+      id: `prompt-option-${record.id}`,
+      label: record.name,
+      selected: Boolean(draft.prompts.find((item) => item.promptId === record.id && item.selected)),
+    })),
+    ...draft.prompts
+      .filter((item) => item.selected && !currentPromptIds.has(item.promptId))
+      .map((item) => ({
+        id: `prompt-snapshot-${item.id}`,
+        label: item.label,
+        selected: true,
+      })),
+  ];
   return (
     <section className="worksheet-section">
       <SectionTitle
         title="USE THE HAZARD ASSESSMENT PROMPT"
         count={draft.prompts.filter((item) => item.selected).length}
       />
-      {options.isLoading ? (
+      {disabled ? (
+        options.isLoading ? (
+          <Spin size="small" />
+        ) : options.error ? (
+          <Alert type="error" showIcon message="Hazard prompts could not be loaded" />
+        ) : readonlyPrompts.length ? (
+          <div className="prompt-grid prompt-grid--readonly">
+            {readonlyPrompts.map((prompt) => (
+              <div
+                className={`prompt-readonly-item${prompt.selected ? ' prompt-readonly-item--selected' : ''}`}
+                key={prompt.id}
+              >
+                <span
+                  className={`prompt-readonly-indicator${prompt.selected ? ' prompt-readonly-indicator--selected' : ''}`}
+                  aria-hidden="true"
+                >
+                  {prompt.selected ? <CheckOutlined /> : null}
+                </span>
+                <span>{prompt.label}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Empty
+            className="worksheet-static-empty"
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="No Hazard Assessment Prompt configured"
+          />
+        )
+      ) : options.isLoading ? (
         <Spin size="small" />
       ) : options.error ? (
         <Alert type="error" showIcon message="Hazard prompts could not be loaded" />
@@ -446,7 +579,10 @@ function PromptSection({
           {(options.data ?? []).map((record) => {
             const prompt = draft.prompts.find((item) => item.promptId === record.id);
             return (
-              <div className="prompt-item" key={record.id}>
+              <div
+                className={`prompt-item${prompt?.selected ? ' prompt-item-selected' : ''}`}
+                key={record.id}
+              >
                 <Checkbox
                   disabled={disabled}
                   checked={prompt?.selected ?? false}
@@ -454,37 +590,6 @@ function PromptSection({
                 >
                   {record.name}
                 </Checkbox>
-                {prompt?.selected && (
-                  <Select
-                    aria-label={`Hazard coverage for ${record.name}`}
-                    disabled={disabled || hazards.length === 0}
-                    placeholder={hazards.length ? 'Covered by hazard' : 'Add a hazard first'}
-                    value={draft.promptCoverage.find(
-                      (coverage) => coverage.promptId === prompt.id,
-                    )?.hazardId}
-                    options={hazards.map((hazard) => ({
-                      value: hazard.id,
-                      label: hazard.text || 'Untitled hazard',
-                    }))}
-                    onChange={(hazardId) =>
-                      update((current) => ({
-                        ...current,
-                        promptCoverage: [
-                          ...current.promptCoverage.filter(
-                            (coverage) => coverage.promptId !== prompt.id,
-                          ),
-                          {
-                            id: fresh(),
-                            logicalKey: '',
-                            promptId: prompt.id,
-                            hazardId,
-                            rowVersion: '1',
-                          },
-                        ],
-                      }))
-                    }
-                  />
-                )}
               </div>
             );
           })}
@@ -494,126 +599,136 @@ function PromptSection({
   );
 }
 
+function MatrixAxisReference({
+  title,
+  rows,
+}: {
+  title: 'PROBABILITY' | 'SEVERITY';
+  rows: RiskAxisLevel[];
+}) {
+  return (
+    <table className="matrix-axis-reference" aria-label={`${title} reference`}>
+      <caption>{title}</caption>
+      <thead>
+        <tr>
+          <th>CATEGORY</th>
+          <th>DEFINITION</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows
+          .slice()
+          .sort((left, right) => left.displayOrder - right.displayOrder)
+          .map((row) => (
+            <tr key={row.id}>
+              <td>
+                <strong>{row.code}</strong>
+                <small>{row.label}</small>
+              </td>
+              <td>{row.definition || row.label}</td>
+            </tr>
+          ))}
+      </tbody>
+    </table>
+  );
+}
+
 function RiskReferenceSection({ draft }: { draft: JsaDraftDetail }) {
-  const [reference, setReference] = useState<'probability' | 'severity'>();
-  const rows =
-    reference === 'probability'
-      ? draft.matrix.likelihoods.map((item) => ({
-          code: item.code,
-          label: item.label,
-          definition: item.definition,
-        }))
-      : draft.matrix.severities.map((item) => ({
-          code: item.code,
-          label: item.label,
-          definition: item.definition,
-        }));
   return (
     <section className="worksheet-section risk-reference">
-      <SectionTitle
-        title={`RISK MATRIX · ${draft.matrix.matrixName}`}
-        extra={
-          <Space wrap>
-            <Button
-              size="small"
-              icon={<InfoCircleOutlined />}
-              onClick={() => setReference('probability')}
-            >
-              P — Probability
-            </Button>
-            <Button
-              size="small"
-              icon={<InfoCircleOutlined />}
-              onClick={() => setReference('severity')}
-            >
-              S — Severity
-            </Button>
-          </Space>
-        }
-      />
+      <SectionTitle title={`RISK MATRIX · ${draft.matrix.matrixName}`} />
       <div className="matrix-layout">
-        <div
-          className="matrix-grid"
-          role="table"
-          aria-label="Risk Matrix"
-          style={{
-            gridTemplateColumns: `minmax(120px, .8fr) repeat(${draft.matrix.dimension}, minmax(76px, 1fr))`,
-          }}
-        >
-          <div className="matrix-corner" />
-          {draft.matrix.severities.map((severity) => (
-            <div className="matrix-axis" key={severity.id}>
-              {severity.code}
-              <small>{severity.label}</small>
-            </div>
-          ))}
-          {draft.matrix.likelihoods
-            .slice()
-            .reverse()
-            .map((likelihood) => (
-              <div className="matrix-row" key={likelihood.id}>
-                <div className="matrix-axis">
-                  {likelihood.code}
-                  <small>{likelihood.label}</small>
-                </div>
-                {draft.matrix.severities.map((severity) => {
-                  const cell = draft.matrix.cells.find(
-                    (item) =>
-                      item.likelihoodId === likelihood.id && item.severityId === severity.id,
-                  );
-                  return (
-                    <div
-                      className="matrix-cell"
-                      key={`${likelihood.id}-${severity.id}`}
-                      style={{ backgroundColor: cell?.displayColor }}
-                      title={cell ? `${cell.riskResultName} (${cell.ratingCode})` : 'Not configured'}
-                    >
-                      <strong>{cell?.ratingCode ?? '—'}</strong>
-                      <span>{cell?.riskResultCode ?? 'N/A'}</span>
-                    </div>
-                  );
-                })}
+        <div className="matrix-axis-reference-group">
+          <MatrixAxisReference title="PROBABILITY" rows={draft.matrix.likelihoods} />
+          <MatrixAxisReference title="SEVERITY" rows={draft.matrix.severities} />
+        </div>
+        <div className="matrix-chart">
+          <div className="matrix-chart-severity">SEVERITY</div>
+          <div className="matrix-chart-probability">PROBABILITY</div>
+          <div
+            className="matrix-grid"
+            role="table"
+            aria-label="Risk Matrix"
+            style={{
+              gridTemplateColumns: `minmax(120px, .8fr) repeat(${draft.matrix.dimension}, minmax(76px, 1fr))`,
+            }}
+          >
+            <div className="matrix-corner" />
+            {draft.matrix.severities.map((severity) => (
+              <div className="matrix-axis" key={severity.id}>
+                {severity.code}
+                <small>{severity.label}</small>
               </div>
             ))}
+            {draft.matrix.likelihoods
+              .slice()
+              .reverse()
+              .map((likelihood) => (
+                <div className="matrix-row" key={likelihood.id}>
+                  <div className="matrix-axis">
+                    {likelihood.code}
+                    <small>{likelihood.label}</small>
+                  </div>
+                  {draft.matrix.severities.map((severity) => {
+                    const cell = draft.matrix.cells.find(
+                      (item) =>
+                        item.likelihoodId === likelihood.id && item.severityId === severity.id,
+                    );
+                    return (
+                      <div
+                        className="matrix-cell"
+                        key={`${likelihood.id}-${severity.id}`}
+                        style={{ backgroundColor: cell?.displayColor }}
+                        title={
+                          cell ? `${cell.riskResultName} (${cell.ratingCode})` : 'Not configured'
+                        }
+                      >
+                        <strong>{cell?.ratingCode ?? '—'}</strong>
+                        <span>{cell?.riskResultCode ?? 'N/A'}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+          </div>
         </div>
-        <div className="risk-legend">
+        <div className="risk-legend" aria-label="Risk colour overview">
+          <div className="risk-legend-heading">RISK COLOUR OVERVIEW</div>
           {draft.matrix.results.map((result) => (
-            <div key={result.id}>
-              <span style={{ backgroundColor: result.displayColor }} />
-              <strong>{result.name}</strong>
-              {result.prohibited && <Tag color="red">Prohibited residual</Tag>}
+            <div
+              className={`risk-legend-item${result.prohibited ? ' risk-legend-item--prohibited' : ''}`}
+              key={result.id}
+            >
+              <span
+                className="risk-legend-swatch"
+                style={{ backgroundColor: result.displayColor }}
+                aria-hidden="true"
+              />
+              <div className="risk-legend-copy">
+                <div className="risk-legend-name">
+                  <strong>{result.name}</strong>
+                  {result.semanticCategory && <span>{result.semanticCategory}</span>}
+                </div>
+                {result.description && <p>{result.description}</p>}
+                {result.guidanceText ? (
+                  <p className="risk-legend-guidance">{result.guidanceText}</p>
+                ) : (
+                  <small className="risk-legend-unconfigured">Guidance not configured</small>
+                )}
+                {result.prohibited && (
+                  <div className="risk-prohibited-note" role="note">
+                    <ExclamationCircleOutlined aria-hidden="true" />
+                    <span>
+                      <strong>Not allowed as Residual Risk</strong>
+                      <small>Reduce the risk before submitting for approval.</small>
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
       </div>
-      <Modal
-        title={reference === 'probability' ? 'P — PROBABILITY' : 'S — SEVERITY'}
-        open={Boolean(reference)}
-        footer={<Button onClick={() => setReference(undefined)}>Close</Button>}
-        onCancel={() => setReference(undefined)}
-        width={680}
-      >
-        <div className="reference-table-wrap">
-          <table className="reference-table">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Label</th>
-                <th>Definition</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.code}>
-                  <td>{row.code}</td>
-                  <td>{row.label}</td>
-                  <td>{row.definition}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Modal>
     </section>
   );
 }
@@ -627,21 +742,38 @@ function TaskRiskSection({
   disabled: boolean;
   update: DraftUpdater;
 }) {
+  const resequence = (tasks: JsaDraftTask[]) =>
+    tasks.map((task, index) => ({
+      ...task,
+      number: String(index + 1),
+      displayOrder: index + 1,
+    }));
+  const newTask = (): JsaDraftTask => ({
+    id: fresh(),
+    logicalKey: '',
+    number: '',
+    title: '',
+    displayOrder: 0,
+    hazards: [emptyHazard()],
+    rowVersion: '1',
+  });
   const addTask = () =>
     update((current) => ({
       ...current,
-      tasks: [
-        ...current.tasks,
-        {
-          id: fresh(),
-          logicalKey: '',
-          number: String(current.tasks.length + 1),
-          title: '',
-          displayOrder: current.tasks.length + 1,
-          hazards: [emptyHazard()],
-          rowVersion: '1',
-        },
-      ],
+      tasks: resequence([...current.tasks, newTask()]),
+    }));
+  const insertTaskAfter = (taskId: string) =>
+    update((current) => {
+      const index = current.tasks.findIndex((task) => task.id === taskId);
+      if (index < 0) return current;
+      const tasks = [...current.tasks];
+      tasks.splice(index + 1, 0, newTask());
+      return { ...current, tasks: resequence(tasks) };
+    });
+  const removeTaskById = (taskId: string) =>
+    update((current) => ({
+      ...current,
+      tasks: resequence(current.tasks.filter((item) => item.id !== taskId)),
     }));
   const setTask = (task: JsaDraftTask) =>
     update((current) => ({
@@ -654,18 +786,30 @@ function TaskRiskSection({
         title="TASK / HAZARD / CONTROL ASSESSMENT"
         count={draft.tasks.length}
         extra={
-          <Button
-            size="small"
-            icon={<PlusCircleOutlined />}
-            disabled={disabled}
-            onClick={addTask}
-          >
-            Add Task
-          </Button>
+          !disabled ? (
+            <Button size="small" icon={<PlusCircleOutlined />} onClick={addTask}>
+              Add Task
+            </Button>
+          ) : undefined
         }
       />
       <div className="worksheet-table-wrap">
-        <table className="worksheet-table task-risk-table">
+        <table
+          className={`worksheet-table task-risk-table${disabled ? ' task-risk-table--readonly' : ''}`}
+        >
+          <colgroup>
+            <col className="task-risk-col-number" />
+            <col className="task-risk-col-task" />
+            <col className="task-risk-col-hazard" />
+            <col className="task-risk-col-select" />
+            <col className="task-risk-col-select" />
+            <col className="task-risk-col-result" />
+            <col className="task-risk-col-controls" />
+            <col className="task-risk-col-select" />
+            <col className="task-risk-col-select" />
+            <col className="task-risk-col-result" />
+            {!disabled ? <col className="task-risk-col-delete" /> : null}
+          </colgroup>
           <thead>
             <tr>
               <th rowSpan={2}>No.</th>
@@ -674,7 +818,7 @@ function TaskRiskSection({
               <th colSpan={3}>Initial Risk</th>
               <th rowSpan={2}>Controls</th>
               <th colSpan={3}>Residual Risk</th>
-              <th rowSpan={2}>Del</th>
+              {!disabled ? <th rowSpan={2}>Del</th> : null}
             </tr>
             <tr>
               <th>P</th>
@@ -688,8 +832,8 @@ function TaskRiskSection({
           <tbody>
             {draft.tasks.length === 0 && (
               <tr>
-                <td colSpan={11} className="worksheet-empty">
-                  No Task yet. Select “Add Task” to begin the assessment.
+                <td colSpan={disabled ? 10 : 11} className="worksheet-empty">
+                  {disabled ? 'No Task recorded.' : 'No Task yet. Select “Add Task” to begin.'}
                 </td>
               </tr>
             )}
@@ -714,31 +858,26 @@ function TaskRiskSection({
                   }
                   changeTask={setTask}
                   removeHazard={() =>
-                    setTask({
-                      ...task,
-                      hazards: task.hazards.filter((item) => item.id !== hazard.id),
-                    })
+                    task.hazards.length <= 1
+                      ? removeTaskById(task.id)
+                      : setTask({
+                          ...task,
+                          hazards: task.hazards.filter((item) => item.id !== hazard.id),
+                        })
                   }
-                  removeTask={() =>
-                    update((current) => ({
-                      ...current,
-                      tasks: current.tasks.filter((item) => item.id !== task.id),
-                    }))
-                  }
+                  insertTaskAfter={() => insertTaskAfter(task.id)}
+                  removeTask={() => removeTaskById(task.id)}
                 />
               ));
             })}
           </tbody>
         </table>
       </div>
-      <Button
-        type="link"
-        icon={<PlusCircleOutlined />}
-        disabled={disabled}
-        onClick={addTask}
-      >
-        Add more Task
-      </Button>
+      {!disabled ? (
+        <Button type="link" icon={<PlusCircleOutlined />} onClick={addTask}>
+          Add more Task
+        </Button>
+      ) : null}
     </section>
   );
 }
@@ -753,6 +892,7 @@ function TaskHazardRow({
   change,
   changeTask,
   removeHazard,
+  insertTaskAfter,
   removeTask,
 }: {
   task: JsaDraftTask;
@@ -764,175 +904,249 @@ function TaskHazardRow({
   change: (hazard: JsaDraftHazard) => void;
   changeTask: (task: JsaDraftTask) => void;
   removeHazard: () => void;
+  insertTaskAfter: () => void;
   removeTask: () => void;
 }) {
+  const [riskPicker, setRiskPicker] = useState<{
+    kind: 'initialRisk' | 'residualRisk';
+    axis: 'probability' | 'severity';
+  }>();
+  const activeRiskLevels =
+    riskPicker?.axis === 'severity'
+      ? draft.matrix.severities.filter((item) => item.active)
+      : draft.matrix.likelihoods.filter((item) => item.active);
+  const selectedRiskLevelId = riskPicker
+    ? riskPicker.axis === 'severity'
+      ? hazard.initialRisk.severityId
+      : hazard[riskPicker.kind].likelihoodId
+    : undefined;
+  const selectRiskLevel = (level: RiskAxisLevel) => {
+    if (!riskPicker) return;
+    if (riskPicker.axis === 'severity') {
+      change({
+        ...hazard,
+        initialRisk: { ...hazard.initialRisk, severityId: level.id },
+        residualRisk: { ...hazard.residualRisk, severityId: level.id },
+      });
+    } else {
+      change({
+        ...hazard,
+        [riskPicker.kind]: {
+          ...hazard[riskPicker.kind],
+          likelihoodId: level.id,
+        },
+      });
+    }
+    setRiskPicker(undefined);
+  };
   const risk = (kind: 'initialRisk' | 'residualRisk') => {
-    const selection = hazard[kind];
+    const isResidual = kind === 'residualRisk';
+    const selection = isResidual
+      ? { ...hazard.residualRisk, severityId: hazard.initialRisk.severityId }
+      : hazard.initialRisk;
     const cell = draft.matrix.cells.find(
       (item) =>
-        item.likelihoodId === selection.likelihoodId &&
-        item.severityId === selection.severityId,
+        item.likelihoodId === selection.likelihoodId && item.severityId === selection.severityId,
     );
+    const probabilityCode =
+      draft.matrix.likelihoods.find((item) => item.id === selection.likelihoodId)?.code ?? '—';
+    const severityCode =
+      draft.matrix.severities.find((item) => item.id === selection.severityId)?.code ?? '—';
     return (
       <>
         <td className="risk-select-cell">
-          <Select
-            disabled={disabled}
-            aria-label={`${kind} probability`}
-            value={selection.likelihoodId}
-            options={draft.matrix.likelihoods
-              .filter((item) => item.active)
-              .map((item) => ({ value: item.id, label: item.code }))}
-            onChange={(likelihoodId) =>
-              change({ ...hazard, [kind]: { ...selection, likelihoodId } })
-            }
-          />
+          {disabled ? (
+            <strong className="risk-readonly-value" aria-label={`${kind} probability`}>
+              {probabilityCode}
+            </strong>
+          ) : (
+            <Button
+              className="risk-picker-trigger"
+              aria-label={`${kind} probability`}
+              onClick={() =>
+                setRiskPicker({
+                  kind,
+                  axis: 'probability',
+                })
+              }
+            >
+              {probabilityCode}
+            </Button>
+          )}
         </td>
         <td className="risk-select-cell">
-          <Select
-            disabled={disabled}
-            aria-label={`${kind} severity`}
-            value={selection.severityId}
-            options={draft.matrix.severities
-              .filter((item) => item.active)
-              .map((item) => ({ value: item.id, label: item.code }))}
-            onChange={(severityId) =>
-              change({ ...hazard, [kind]: { ...selection, severityId } })
-            }
-          />
+          {disabled ? (
+            <strong className="risk-readonly-value" aria-label={`${kind} severity`}>
+              {severityCode}
+            </strong>
+          ) : (
+            <Button
+              className="risk-picker-trigger"
+              disabled={isResidual}
+              aria-label={`${kind} severity`}
+              title={
+                isResidual ? 'Residual Severity is inherited from Initial Severity' : undefined
+              }
+              onClick={() =>
+                setRiskPicker({
+                  kind,
+                  axis: 'severity',
+                })
+              }
+            >
+              {severityCode}
+            </Button>
+          )}
         </td>
         <td className="risk-result-cell">
-          <span style={{ backgroundColor: cell?.displayColor }}>
-            {cell?.ratingCode ?? '—'}
-          </span>
+          <span style={{ backgroundColor: cell?.displayColor }}>{cell?.ratingCode ?? '—'}</span>
           <small>{cell?.riskResultCode ?? 'Select P/S'}</small>
         </td>
       </>
     );
   };
   return (
-    <tr>
-      <td>{`${taskIndex + 1}.${hazardIndex + 1}`}</td>
-      <td className="task-cell">
-        {hazardIndex === 0 ? (
-          <>
-            <Input
-              disabled={disabled}
-              aria-label={`Task ${taskIndex + 1} number`}
-              placeholder="No."
-              value={task.number}
-              onChange={(event) => changeTask({ ...task, number: event.target.value })}
-            />
-            <Input.TextArea
-              disabled={disabled}
-              aria-label={`Task ${taskIndex + 1}`}
-              placeholder="Task / sequence of work"
-              autoSize={{ minRows: 2, maxRows: 6 }}
-              value={task.title}
-              onChange={(event) => changeTask({ ...task, title: event.target.value })}
-            />
-            <Space wrap size={4}>
-              <Button
-                size="small"
-                type="link"
-                disabled={disabled}
-                onClick={() =>
-                  changeTask({
-                    ...task,
-                    hazards: [...task.hazards, emptyHazard()],
-                  })
-                }
-              >
-                + Hazard
-              </Button>
-              <Button size="small" type="link" danger disabled={disabled} onClick={removeTask}>
-                Delete Task
-              </Button>
-            </Space>
-          </>
-        ) : (
-          <span className="continued-label">Task {taskIndex + 1} continued</span>
-        )}
-      </td>
-      <td>
-        <Input.TextArea
-          disabled={disabled}
-          aria-label={`Hazard ${hazardIndex + 1} for task ${taskIndex + 1}`}
-          placeholder="Potential hazard"
-          autoSize={{ minRows: 3, maxRows: 8 }}
-          value={hazard.text}
-          onChange={(event) => change({ ...hazard, text: event.target.value })}
-        />
-      </td>
-      {risk('initialRisk')}
-      <td className="controls-cell">
-        {hazard.controls.map((control) => (
-          <div className="control-entry" key={control.id}>
-            <Input.TextArea
-              disabled={disabled}
-              aria-label="Hazard control"
-              placeholder="Control to reduce potential hazard"
-              autoSize={{ minRows: 2, maxRows: 5 }}
-              value={control.text}
-              onChange={(event) =>
-                change({
-                  ...hazard,
-                  controls: hazard.controls.map((item) =>
-                    item.id === control.id ? { ...item, text: event.target.value } : item,
-                  ),
-                })
-              }
-            />
+    <>
+      <tr>
+        <td>{hazardIndex === 0 ? taskIndex + 1 : null}</td>
+        <td className="task-cell">
+          {hazardIndex === 0 ? (
+            <>
+              <Input.TextArea
+                readOnly={disabled}
+                aria-label={`Task ${taskIndex + 1}`}
+                placeholder="Task / sequence of work"
+                autoSize={{ minRows: 2, maxRows: 6 }}
+                value={task.title}
+                onChange={(event) => changeTask({ ...task, title: event.target.value })}
+              />
+              {!disabled ? (
+                <Space wrap size={4}>
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() =>
+                      changeTask({
+                        ...task,
+                        hazards: [...task.hazards, emptyHazard()],
+                      })
+                    }
+                  >
+                    + Hazard
+                  </Button>
+                  <Button
+                    size="small"
+                    type="link"
+                    icon={<PlusOutlined />}
+                    aria-label={`Insert task after task ${taskIndex + 1}`}
+                    title={`Insert a new task after task ${taskIndex + 1}`}
+                    onClick={insertTaskAfter}
+                  >
+                    Task
+                  </Button>
+                  <Button size="small" type="link" danger onClick={removeTask}>
+                    Delete Task
+                  </Button>
+                </Space>
+              ) : null}
+            </>
+          ) : (
+            <span className="continued-label">Task {taskIndex + 1} continued</span>
+          )}
+        </td>
+        <td className="hazard-cell">
+          <Input.TextArea
+            readOnly={disabled}
+            aria-label={`Hazard ${hazardIndex + 1} for task ${taskIndex + 1}`}
+            placeholder="Potential hazard"
+            autoSize={{ minRows: 3, maxRows: 8 }}
+            value={hazard.text}
+            onChange={(event) => change({ ...hazard, text: event.target.value })}
+          />
+        </td>
+        {risk('initialRisk')}
+        <td className="controls-cell">
+          <Input.TextArea
+            readOnly={disabled}
+            aria-label="Hazard control"
+            placeholder="Control to reduce potential hazard"
+            autoSize={{ minRows: 3, maxRows: 8 }}
+            value={hazard.controls[0]?.text ?? ''}
+            onChange={(event) => {
+              const control = hazard.controls[0] ?? emptyControl();
+              change({
+                ...hazard,
+                controls: [{ ...control, text: event.target.value, displayOrder: 1 }],
+              });
+            }}
+          />
+        </td>
+        {risk('residualRisk')}
+        {!disabled ? (
+          <td className="task-risk-delete-cell">
             <Button
               type="text"
               danger
               icon={<DeleteOutlined />}
-              aria-label="Remove control"
-              disabled={disabled}
-              onClick={() =>
-                change({
-                  ...hazard,
-                  controls: hazard.controls.filter((item) => item.id !== control.id),
-                })
+              aria-label={
+                task.hazards.length <= 1 ? 'Delete task and its only hazard' : 'Remove hazard'
               }
+              title={task.hazards.length <= 1 ? 'Delete task and its only hazard' : 'Remove hazard'}
+              onClick={removeHazard}
             />
-          </div>
-        ))}
-        <Button
-          size="small"
-          type="link"
-          disabled={disabled}
-          onClick={() =>
-            change({
-              ...hazard,
-              controls: [
-                ...hazard.controls,
-                {
-                  id: fresh(),
-                  logicalKey: '',
-                  text: '',
-                  displayOrder: hazard.controls.length + 1,
-                  rowVersion: '1',
-                },
-              ],
-            })
-          }
+          </td>
+        ) : null}
+      </tr>
+      {!disabled ? (
+        <Modal
+          title={riskPicker?.axis === 'probability' ? 'P — PROBABILITY' : 'S — SEVERITY'}
+          open={Boolean(riskPicker)}
+          centered
+          footer={<Button onClick={() => setRiskPicker(undefined)}>Close</Button>}
+          onCancel={() => setRiskPicker(undefined)}
+          width={620}
+          destroyOnHidden
         >
-          + Control
-        </Button>
-      </td>
-      {risk('residualRisk')}
-      <td>
-        <Button
-          type="text"
-          danger
-          icon={<DeleteOutlined />}
-          aria-label="Remove hazard"
-          disabled={disabled}
-          onClick={removeHazard}
-        />
-      </td>
-    </tr>
+          <div className="reference-table-wrap">
+            <table className="reference-table risk-picker-table">
+              <thead>
+                <tr>
+                  <th>CATEGORY (Detail)</th>
+                  <th>DEFINITION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeRiskLevels
+                  .slice()
+                  .sort((left, right) => left.displayOrder - right.displayOrder)
+                  .map((level) => (
+                    <tr
+                      className={level.id === selectedRiskLevelId ? 'risk-picker-row-selected' : ''}
+                      key={level.id}
+                      onClick={() => selectRiskLevel(level)}
+                    >
+                      <td>
+                        <button
+                          type="button"
+                          className="risk-picker-option"
+                          aria-label={`Select ${riskPicker?.axis ?? 'risk'} ${level.code}: ${level.label}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            selectRiskLevel(level);
+                          }}
+                        >
+                          {level.code}
+                        </button>
+                      </td>
+                      <td>{level.definition || level.label}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </Modal>
+      ) : null}
+    </>
   );
 }
 
@@ -944,15 +1158,17 @@ function emptyHazard(): JsaDraftHazard {
     displayOrder: 1,
     initialRisk: {},
     residualRisk: {},
-    controls: [
-      {
-        id: fresh(),
-        logicalKey: '',
-        text: '',
-        displayOrder: 1,
-        rowVersion: '1',
-      },
-    ],
+    controls: [emptyControl()],
+    rowVersion: '1',
+  };
+}
+
+function emptyControl(): JsaDraftHazard['controls'][number] {
+  return {
+    id: fresh(),
+    logicalKey: '',
+    text: '',
+    displayOrder: 1,
     rowVersion: '1',
   };
 }
@@ -970,10 +1186,12 @@ function BasicStepSection({
   const positions = useQuery({
     queryKey: ['jsa-options', 'positions', suffix],
     queryFn: () => jsaApi.options<MasterDataRecord>('positions', suffix),
+    enabled: !disabled,
   });
   const tools = useQuery({
     queryKey: ['jsa-options', 'tools', suffix],
     queryFn: () => jsaApi.options<MasterDataRecord>('tools', suffix),
+    enabled: !disabled,
   });
   const [picker, setPicker] = useState<{ stepId: string; kind: PickerKind }>();
   const step = draft.basicSteps.find((item) => item.id === picker?.stepId);
@@ -1054,18 +1272,17 @@ function BasicStepSection({
         title="BASIC JOB STEP"
         count={draft.basicSteps.length}
         extra={
-          <Button
-            size="small"
-            icon={<PlusCircleOutlined />}
-            disabled={disabled}
-            onClick={addStep}
-          >
-            Add Basic Job Step
-          </Button>
+          !disabled ? (
+            <Button size="small" icon={<PlusCircleOutlined />} onClick={addStep}>
+              Add Basic Job Step
+            </Button>
+          ) : undefined
         }
       />
       <div className="worksheet-table-wrap">
-        <table className="worksheet-table basic-step-table">
+        <table
+          className={`worksheet-table basic-step-table${disabled ? ' basic-step-table--readonly' : ''}`}
+        >
           <thead>
             <tr>
               <th>No.</th>
@@ -1073,13 +1290,13 @@ function BasicStepSection({
               <th>Who performs task?</th>
               <th>Who supervises task?</th>
               <th>Tools required?</th>
-              <th>Del</th>
+              {!disabled ? <th>Del</th> : null}
             </tr>
           </thead>
           <tbody>
             {draft.basicSteps.length === 0 && (
               <tr>
-                <td colSpan={6} className="worksheet-empty">
+                <td colSpan={disabled ? 5 : 6} className="worksheet-empty">
                   No Basic Job Step yet.
                 </td>
               </tr>
@@ -1088,7 +1305,7 @@ function BasicStepSection({
               <tr key={item.id}>
                 <td>
                   <Input
-                    disabled={disabled}
+                    readOnly={disabled}
                     aria-label={`Basic Job Step ${index + 1} number`}
                     value={item.number}
                     onChange={(event) => change({ ...item, number: event.target.value })}
@@ -1096,7 +1313,7 @@ function BasicStepSection({
                 </td>
                 <td>
                   <Input.TextArea
-                    disabled={disabled}
+                    readOnly={disabled}
                     aria-label={`Basic Job Step ${index + 1}`}
                     autoSize={{ minRows: 2, maxRows: 6 }}
                     value={item.text}
@@ -1108,7 +1325,7 @@ function BasicStepSection({
                     icon={<UserOutlined />}
                     label="Select performers"
                     values={item.performers.map((value) => value.name)}
-                    disabled={disabled}
+                    readOnly={disabled}
                     onClick={() => setPicker({ stepId: item.id, kind: 'performers' })}
                   />
                 </td>
@@ -1117,74 +1334,91 @@ function BasicStepSection({
                     icon={<UserOutlined />}
                     label="Select supervisors"
                     values={item.supervisors.map((value) => value.name)}
-                    disabled={disabled}
+                    readOnly={disabled}
                     onClick={() => setPicker({ stepId: item.id, kind: 'supervisors' })}
                   />
                 </td>
                 <td>
-                  <AssignmentButton
-                    icon={<ToolOutlined />}
-                    label="Select tools"
-                    values={item.tools.map((value) => value.name)}
-                    disabled={disabled || item.noToolRequired}
-                    onClick={() => setPicker({ stepId: item.id, kind: 'tools' })}
-                  />
-                  <Checkbox
-                    disabled={disabled}
-                    checked={item.noToolRequired}
-                    onChange={(event) =>
-                      change({
-                        ...item,
-                        noToolRequired: event.target.checked,
-                        ...(event.target.checked ? { tools: [] } : {}),
-                      })
-                    }
-                  >
-                    No tool required
-                  </Checkbox>
+                  {disabled ? (
+                    item.noToolRequired ? (
+                      <Tag>No tool required</Tag>
+                    ) : (
+                      <AssignmentButton
+                        icon={<ToolOutlined />}
+                        label="Select tools"
+                        values={item.tools.map((value) => value.name)}
+                        readOnly
+                        onClick={() => setPicker({ stepId: item.id, kind: 'tools' })}
+                      />
+                    )
+                  ) : (
+                    <>
+                      <AssignmentButton
+                        icon={<ToolOutlined />}
+                        label="Select tools"
+                        values={item.tools.map((value) => value.name)}
+                        disabled={item.noToolRequired}
+                        onClick={() => setPicker({ stepId: item.id, kind: 'tools' })}
+                      />
+                      <Checkbox
+                        checked={item.noToolRequired}
+                        onChange={(event) =>
+                          change({
+                            ...item,
+                            noToolRequired: event.target.checked,
+                            ...(event.target.checked ? { tools: [] } : {}),
+                          })
+                        }
+                      >
+                        No tool required
+                      </Checkbox>
+                    </>
+                  )}
                 </td>
-                <td>
-                  <Button
-                    type="text"
-                    danger
-                    icon={<DeleteOutlined />}
-                    aria-label={`Delete Basic Job Step ${index + 1}`}
-                    disabled={disabled}
-                    onClick={() =>
-                      update((current) => ({
-                        ...current,
-                        basicSteps: current.basicSteps.filter((stepItem) => stepItem.id !== item.id),
-                      }))
-                    }
-                  />
-                </td>
+                {!disabled ? (
+                  <td>
+                    <Button
+                      type="text"
+                      danger
+                      icon={<DeleteOutlined />}
+                      aria-label={`Delete Basic Job Step ${index + 1}`}
+                      onClick={() =>
+                        update((current) => ({
+                          ...current,
+                          basicSteps: current.basicSteps.filter(
+                            (stepItem) => stepItem.id !== item.id,
+                          ),
+                        }))
+                      }
+                    />
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <Button
-        type="link"
-        icon={<PlusCircleOutlined />}
-        disabled={disabled}
-        onClick={addStep}
-      >
-        Add more Basic Job Step
-      </Button>
-      <ReferencePickerModal
-        open={Boolean(picker)}
-        title={
-          picker?.kind === 'tools'
-            ? 'TOOLS'
-            : picker?.kind === 'performers'
-              ? 'PERFORMER POSITIONS'
-              : 'SUPERVISOR POSITIONS'
-        }
-        records={records ?? []}
-        selected={selected ?? []}
-        onCancel={() => setPicker(undefined)}
-        onConfirm={applyPicker}
-      />
+      {!disabled ? (
+        <>
+          <Button type="link" icon={<PlusCircleOutlined />} onClick={addStep}>
+            Add more Basic Job Step
+          </Button>
+          <ReferencePickerModal
+            open={Boolean(picker)}
+            title={
+              picker?.kind === 'tools'
+                ? 'TOOLS'
+                : picker?.kind === 'performers'
+                  ? 'PERFORMER POSITIONS'
+                  : 'SUPERVISOR POSITIONS'
+            }
+            records={records ?? []}
+            selected={selected ?? []}
+            onCancel={() => setPicker(undefined)}
+            onConfirm={applyPicker}
+          />
+        </>
+      ) : null}
     </section>
   );
 }
@@ -1193,24 +1427,29 @@ function AssignmentButton({
   icon,
   label,
   values,
+  readOnly = false,
   disabled,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   values: string[];
-  disabled: boolean;
+  readOnly?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
-    <div className="assignment-summary">
-      <Button icon={icon} disabled={disabled} onClick={onClick}>
-        {label} ({values.length})
-      </Button>
-      <div>
+    <div className={`assignment-summary${readOnly ? ' assignment-summary--readonly' : ''}`}>
+      {!readOnly ? (
+        <Button icon={icon} disabled={disabled} onClick={onClick}>
+          {label} ({values.length})
+        </Button>
+      ) : null}
+      <div className="assignment-values">
         {values.map((value) => (
           <Tag key={value}>{value}</Tag>
         ))}
+        {readOnly && values.length === 0 ? <span>None recorded</span> : null}
       </div>
     </div>
   );
@@ -1280,137 +1519,347 @@ function ReferenceAttachmentSection({
   disabled: boolean;
   update: DraftUpdater;
 }) {
-  const suffix = `?siteId=${draft.ownerSiteId}&rigId=${draft.rigId}&departmentId=${draft.departmentId}`;
-  const references = useQuery({
-    queryKey: ['jsa-options', 'procedure-references', suffix],
-    queryFn: () => jsaApi.options<MasterDataRecord>('procedure-references', suffix),
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerFolderId, setPickerFolderId] = useState<string>();
+  const [pickerSearch, setPickerSearch] = useState('');
+  const scope = `siteId=${draft.ownerSiteId}&rigId=${draft.rigId}&departmentId=${draft.departmentId}`;
+  const library = useQuery({
+    queryKey: ['attachment-library-picker', draft.ownerSiteId, draft.rigId, draft.departmentId],
+    queryFn: () =>
+      jsaApi.attachmentPicker<{
+        folders: AttachmentLibraryFolder[];
+        assets: AttachmentLibraryAsset[];
+      }>(scope),
+    enabled: pickerOpen,
   });
+  useEffect(() => {
+    if (pickerOpen) {
+      setPickerFolderId(undefined);
+      setPickerSearch('');
+    }
+  }, [pickerOpen, draft.ownerSiteId, draft.rigId, draft.departmentId]);
+  const selected = new Set(
+    draft.attachments
+      .map((item) => item.libraryAssetVersionId)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const toggle = (asset: AttachmentLibraryAsset, checked: boolean) =>
+    update((current) => ({
+      ...current,
+      attachments: checked
+        ? [
+            ...current.attachments,
+            {
+              id: fresh(),
+              logicalKey: '',
+              libraryAssetVersionId: asset.currentVersionId,
+              fileName: asset.originalFileName,
+              contentType: asset.contentType,
+              fileSize: asset.fileSize,
+              storageKey: undefined,
+              status: 'STORED',
+              description: asset.description,
+              rowVersion: '1',
+            },
+          ]
+        : current.attachments.filter(
+            (item) => item.libraryAssetVersionId !== asset.currentVersionId,
+          ),
+    }));
+  const folders = (library.data?.folders ?? []).filter(
+    (folder) =>
+      folder.active &&
+      folder.siteId === draft.ownerSiteId &&
+      folder.rigId === draft.rigId &&
+      folder.departmentId === draft.departmentId,
+  );
+  const assets = (library.data?.assets ?? []).filter((asset) => asset.active);
+  const selectedFolder = pickerFolderId
+    ? folders.find((folder) => folder.id === pickerFolderId)
+    : undefined;
+  const childFolders = folders.filter((folder) =>
+    selectedFolder ? folder.parentFolderId === selectedFolder.id : !folder.parentFolderId,
+  );
+  const currentAssets = selectedFolder
+    ? assets.filter((asset) => asset.folderId === selectedFolder.id)
+    : [];
+  const normalizedSearch = pickerSearch.trim().toLocaleLowerCase();
+  const visibleFolders = childFolders.filter((folder) =>
+    folder.name.toLocaleLowerCase().includes(normalizedSearch),
+  );
+  const visibleAssets = currentAssets.filter((asset) =>
+    `${asset.name} ${asset.originalFileName}`.toLocaleLowerCase().includes(normalizedSearch),
+  );
+  const selectFolder = (folderId?: string) => {
+    setPickerFolderId(folderId);
+    setPickerSearch('');
+  };
+  const treeData = [
+    {
+      key: 'department-root',
+      title: `${draft.departmentCode} — ${draft.departmentName}`,
+      icon: <HomeOutlined />,
+      children: buildAttachmentFolderTree(folders),
+    },
+  ];
+  const breadcrumbs = [
+    {
+      title: (
+        <span className="attachment-picker-breadcrumb-root">
+          <FolderOpenOutlined /> {draft.rigCode} — {draft.rigName}
+        </span>
+      ),
+    },
+    {
+      title: (
+        <button
+          type="button"
+          className="attachment-picker-breadcrumb-button"
+          onClick={() => selectFolder()}
+        >
+          {draft.departmentName}
+        </button>
+      ),
+    },
+    ...attachmentFolderAncestors(selectedFolder, folders).map((folder) => ({
+      title: (
+        <button
+          type="button"
+          className="attachment-picker-breadcrumb-button"
+          onClick={() => selectFolder(folder.id)}
+        >
+          {folder.name}
+        </button>
+      ),
+    })),
+  ];
   return (
     <section className="worksheet-section">
-      <SectionTitle title="REFERENCES & ATTACHMENTS" />
-      <div className="reference-grid">
-        <Card size="small" title="Procedure References">
-          <Select
-            className="full-width"
-            disabled={disabled}
-            placeholder="Add governed procedure"
-            options={references.data?.map((item) => ({
-              value: item.id,
-              label: `${item.code} — ${item.name}`,
-            }))}
-            onChange={(procedureReferenceId) => {
-              const record = references.data?.find((item) => item.id === procedureReferenceId);
-              if (!record) return;
-              update((current) => ({
-                ...current,
-                procedureReferences: [
-                  ...current.procedureReferences,
-                  {
-                    id: fresh(),
-                    logicalKey: '',
-                    procedureReferenceId,
-                    code: record.code,
-                    title: record.name,
-                    displayOrder: current.procedureReferences.length + 1,
-                    rowVersion: '1',
-                  },
-                ],
-              }));
-            }}
-          />
-          {draft.procedureReferences.map((item) => (
-            <div className="list-row" key={item.id}>
-              <span>
-                <strong>{item.code}</strong> {item.title}
-              </span>
-              <Button
-                type="text"
-                danger
-                icon={<DeleteOutlined />}
-                disabled={disabled}
-                aria-label={`Remove procedure ${item.code}`}
-                onClick={() =>
-                  update((current) => ({
-                    ...current,
-                    procedureReferences: current.procedureReferences.filter(
-                      (reference) => reference.id !== item.id,
-                    ),
-                  }))
-                }
-              />
-            </div>
-          ))}
-        </Card>
-        <Card size="small" title="Attachment Metadata">
-          <Alert
-            type="warning"
-            showIcon
-            message="Binary upload is unavailable in this phase"
-            description="Metadata-only attachments are retained, but validation blocks submission until storage is configured."
-          />
-          <Form
-            layout="vertical"
-            disabled={disabled}
-            onFinish={(values: { fileName: string; description?: string }) =>
-              update((current) => ({
-                ...current,
-                attachments: [
-                  ...current.attachments,
-                  {
-                    id: fresh(),
-                    logicalKey: '',
-                    fileName: values.fileName,
-                    status: 'METADATA_ONLY',
-                    description: values.description,
-                    rowVersion: '1',
-                  },
-                ],
-              }))
-            }
-          >
-            <div className="attachment-form">
-              <Form.Item name="fileName" label="File name" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-              <Form.Item name="description" label="Note">
-                <Input />
-              </Form.Item>
-              <Button htmlType="submit">Add attachment</Button>
-            </div>
-          </Form>
-          {draft.attachments.map((item) => (
-            <div className="list-row" key={item.id}>
-              <span>
-                {item.fileName} <Tag>{item.status}</Tag>
-              </span>
-              <Button
-                type="text"
-                danger
-                icon={<DeleteOutlined />}
-                disabled={disabled}
-                aria-label={`Remove attachment ${item.fileName}`}
-                onClick={() =>
-                  update((current) => ({
-                    ...current,
-                    attachments: current.attachments.filter(
-                      (attachment) => attachment.id !== item.id,
-                    ),
-                  }))
-                }
-              />
-            </div>
-          ))}
+      <SectionTitle title="ATTACHMENTS" />
+      <div className="reference-grid attachment-only-grid">
+        <Card
+          size="small"
+          title="Selected attachments"
+          extra={
+            !disabled ? (
+              <Button onClick={() => setPickerOpen(true)}>Pick attachments</Button>
+            ) : undefined
+          }
+        >
+          {draft.attachments.filter((item) => item.libraryAssetVersionId).length === 0 ? (
+            <Typography.Text type="secondary">No attachment selected.</Typography.Text>
+          ) : null}
+          {draft.attachments
+            .filter((item) => item.libraryAssetVersionId)
+            .map((item) => (
+              <div className="list-row" key={item.id}>
+                <span>
+                  {item.fileName} <Tag>Library</Tag>
+                </span>
+                {!disabled ? (
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    aria-label={`Remove attachment ${item.fileName}`}
+                    onClick={() =>
+                      update((current) => ({
+                        ...current,
+                        attachments: current.attachments.filter(
+                          (attachment) => attachment.id !== item.id,
+                        ),
+                      }))
+                    }
+                  />
+                ) : null}
+              </div>
+            ))}
         </Card>
       </div>
+      {!disabled ? (
+        <Modal
+          title="Pick attachments"
+          open={pickerOpen}
+          centered
+          width={1120}
+          className="attachment-picker-modal"
+          footer={<Button onClick={() => setPickerOpen(false)}>Done</Button>}
+          onCancel={() => setPickerOpen(false)}
+          destroyOnHidden
+        >
+          <div className="attachment-picker-scope" aria-label="JSA attachment scope">
+            <span>
+              <strong>Site</strong>
+              {draft.ownerSiteCode} — {draft.ownerSiteName}
+            </span>
+            <span>
+              <strong>Rig</strong>
+              {draft.rigCode} — {draft.rigName}
+            </span>
+            <span>
+              <strong>Department</strong>
+              {draft.departmentCode} — {draft.departmentName}
+            </span>
+          </div>
+          {library.error ? (
+            <Alert type="error" showIcon message="Attachment Library could not be loaded" />
+          ) : null}
+          <div className="attachment-picker-explorer" aria-label="Rig attachment file explorer">
+            <aside className="attachment-picker-tree" aria-label="Attachment folders">
+              <div className="attachment-picker-pane-heading">
+                <Typography.Text strong>Folders</Typography.Text>
+                <Typography.Text type="secondary">{folders.length} folders</Typography.Text>
+              </div>
+              <Spin spinning={library.isLoading}>
+                <Tree
+                  showIcon
+                  defaultExpandAll
+                  blockNode
+                  treeData={treeData}
+                  selectedKeys={[pickerFolderId ? `folder:${pickerFolderId}` : 'department-root']}
+                  onSelect={(keys) => {
+                    const key = String(keys[0] ?? '');
+                    if (key === 'department-root') selectFolder();
+                    if (key.startsWith('folder:')) selectFolder(key.slice('folder:'.length));
+                  }}
+                />
+              </Spin>
+            </aside>
+            <main className="attachment-picker-content">
+              <div className="attachment-picker-toolbar">
+                <Breadcrumb items={breadcrumbs} />
+                <Input
+                  allowClear
+                  aria-label="Filter current attachment folder"
+                  prefix={<SearchOutlined />}
+                  placeholder="Filter this folder"
+                  value={pickerSearch}
+                  onChange={(event) => setPickerSearch(event.target.value)}
+                />
+              </div>
+              <div className="attachment-picker-summary" aria-live="polite">
+                <Typography.Text strong>
+                  {selectedFolder?.name ?? draft.departmentName}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {visibleFolders.length} folders · {visibleAssets.length} files · {selected.size}{' '}
+                  selected
+                </Typography.Text>
+              </div>
+              <Spin spinning={library.isLoading}>
+                {visibleFolders.length || visibleAssets.length ? (
+                  <div className="attachment-picker-grid">
+                    {visibleFolders.map((folder) => (
+                      <button
+                        type="button"
+                        className="attachment-picker-item attachment-picker-folder"
+                        key={folder.id}
+                        onClick={() => selectFolder(folder.id)}
+                      >
+                        <FolderOutlined className="attachment-picker-icon" />
+                        <span className="attachment-picker-name">{folder.name}</span>
+                        <span className="attachment-picker-meta">Folder</span>
+                      </button>
+                    ))}
+                    {visibleAssets.map((asset) => (
+                      <article
+                        className={`attachment-picker-item attachment-picker-file${
+                          selected.has(asset.currentVersionId) ? ' is-selected' : ''
+                        }`}
+                        key={asset.id}
+                      >
+                        <Checkbox
+                          aria-label={`Select attachment ${asset.name}`}
+                          checked={selected.has(asset.currentVersionId)}
+                          onChange={(event) => toggle(asset, event.target.checked)}
+                        />
+                        {attachmentFileIcon(asset)}
+                        <span className="attachment-picker-name" title={asset.name}>
+                          {asset.name}
+                        </span>
+                        <span className="attachment-picker-meta" title={asset.originalFileName}>
+                          {asset.originalFileName}
+                        </span>
+                        <Tag>v{asset.versionNumber}</Tag>
+                      </article>
+                    ))}
+                  </div>
+                ) : !library.isLoading ? (
+                  <div className="attachment-picker-empty">
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description={
+                        normalizedSearch
+                          ? 'No matching folders or files'
+                          : selectedFolder
+                            ? 'This folder is empty'
+                            : 'No governed attachment is available for this JSA scope'
+                      }
+                    />
+                  </div>
+                ) : null}
+              </Spin>
+            </main>
+          </div>
+        </Modal>
+      ) : null}
     </section>
   );
+}
+
+function buildAttachmentFolderTree(folders: AttachmentLibraryFolder[]) {
+  const childrenByParent = new Map<string, AttachmentLibraryFolder[]>();
+  folders.forEach((folder) => {
+    const parent = folder.parentFolderId ?? 'root';
+    childrenByParent.set(parent, [...(childrenByParent.get(parent) ?? []), folder]);
+  });
+  const visit = (parentId: string, ancestors: Set<string>): Array<Record<string, unknown>> =>
+    (childrenByParent.get(parentId) ?? []).map((folder) => ({
+      key: `folder:${folder.id}`,
+      title: folder.name,
+      icon: <FolderOutlined />,
+      children: ancestors.has(folder.id) ? [] : visit(folder.id, new Set(ancestors).add(folder.id)),
+    }));
+  return visit('root', new Set());
+}
+
+function attachmentFolderAncestors(
+  folder: AttachmentLibraryFolder | undefined,
+  folders: AttachmentLibraryFolder[],
+) {
+  const result: AttachmentLibraryFolder[] = [];
+  const visited = new Set<string>();
+  let current = folder;
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    result.unshift(current);
+    current = current.parentFolderId
+      ? folders.find((candidate) => candidate.id === current?.parentFolderId)
+      : undefined;
+  }
+  return result;
+}
+
+function attachmentFileIcon(asset: AttachmentLibraryAsset) {
+  const props = { className: 'attachment-picker-icon', 'aria-hidden': true };
+  if (asset.contentType === 'application/pdf') return <FilePdfOutlined {...props} />;
+  if (asset.contentType.includes('word')) return <FileWordOutlined {...props} />;
+  if (asset.contentType.includes('sheet') || asset.contentType.includes('excel'))
+    return <FileExcelOutlined {...props} />;
+  if (asset.contentType.includes('presentation') || asset.contentType.includes('powerpoint'))
+    return <FilePptOutlined {...props} />;
+  if (asset.contentType.startsWith('image/')) return <FileImageOutlined {...props} />;
+  return <FileOutlined {...props} />;
 }
 
 function ValidationSection({ result }: { result?: JsaValidationResult }) {
   if (!result) return null;
   return (
     <section className="worksheet-section validation-section" aria-live="polite">
-      <SectionTitle title="VALIDATION RESULT" count={result.errors.length + result.warnings.length} />
+      <SectionTitle
+        title="VALIDATION RESULT"
+        count={result.errors.length + result.warnings.length}
+      />
       <Alert
         showIcon
         type={result.valid ? 'success' : 'error'}
@@ -1454,7 +1903,7 @@ function serialize(draft: JsaDraftDetail) {
         },
         residualRisk: {
           likelihoodId: hazard.residualRisk.likelihoodId,
-          severityId: hazard.residualRisk.severityId,
+          severityId: hazard.initialRisk.severityId,
         },
         controls: hazard.controls.map((control) => ({
           ...meta(control),
@@ -1463,13 +1912,7 @@ function serialize(draft: JsaDraftDetail) {
         })),
       })),
     })),
-    coverage: draft.promptCoverage.map((item) => ({
-      ...meta(item),
-      promptRef: item.promptId,
-      hazardRef: item.hazardId,
-      controlRef: item.controlId,
-      note: item.note,
-    })),
+    coverage: [],
     basicSteps: draft.basicSteps.map((item) => ({
       ...meta(item),
       taskRef: item.taskId,
@@ -1493,22 +1936,66 @@ function serialize(draft: JsaDraftDetail) {
         displayOrder: tool.displayOrder,
       })),
     })),
-    procedureReferences: draft.procedureReferences.map((item) => ({
-      ...meta(item),
-      procedureReferenceId: item.procedureReferenceId,
-      code: item.code,
-      title: item.title,
-      revision: item.revision,
-      uri: item.uri,
-      notes: item.notes,
-      displayOrder: item.displayOrder,
-    })),
-    attachments: draft.attachments.map((item) => ({
-      ...meta(item),
-      fileName: item.fileName,
-      contentType: item.contentType,
-      fileSize: item.fileSize,
-      description: item.description,
-    })),
+    procedureReferences: [],
+    attachments: draft.attachments
+      .filter((item) => item.libraryAssetVersionId)
+      .map((item) => ({
+        ...meta(item),
+        libraryAssetVersionId: item.libraryAssetVersionId!,
+      })),
   };
+}
+
+function savePayload(
+  draft: JsaDraftDetail,
+  versions: Pick<JsaDraftDetail, 'rowVersion' | 'versionRowVersion'> = draft,
+) {
+  return {
+    ...serialize(draft),
+    rowVersion: versions.rowVersion,
+    versionRowVersion: versions.versionRowVersion,
+    jobTitle: draft.jobTitle,
+  };
+}
+
+function canRetryRootVersionConflict(
+  current: JsaDraftDetail,
+  latest: JsaDraftDetail,
+  baseline?: JsaDraftDetail,
+) {
+  const headerIsSafe =
+    sameBusinessHeader(current, latest) ||
+    (baseline !== undefined && sameBusinessHeader(baseline, latest));
+  const expectedFingerprint = baseline
+    ? persistedVersionFingerprint(baseline)
+    : persistedVersionFingerprint(current);
+  return headerIsSafe && expectedFingerprint === persistedVersionFingerprint(latest);
+}
+
+function sameBusinessHeader(left: JsaDraftDetail, right: JsaDraftDetail) {
+  return left.jobTitle === right.jobTitle;
+}
+
+function persistedVersionFingerprint(draft: JsaDraftDetail) {
+  const values: string[] = [];
+  const add = (kind: string, item: { id: string; rowVersion: string }) => {
+    if (persisted(item.id)) values.push(`${kind}:${item.id}:${item.rowVersion}`);
+  };
+  draft.prompts.forEach((item) => add('prompt', item));
+  draft.tasks.forEach((task) => {
+    add('task', task);
+    task.hazards.forEach((hazard) => {
+      add('hazard', hazard);
+      hazard.controls.forEach((control) => add('control', control));
+    });
+  });
+  draft.promptCoverage.forEach((item) => add('coverage', item));
+  draft.basicSteps.forEach((step) => {
+    add('step', step);
+    step.performers.forEach((item) => add('performer', item));
+    step.supervisors.forEach((item) => add('supervisor', item));
+    step.tools.forEach((item) => add('tool', item));
+  });
+  draft.attachments.forEach((item) => add('attachment', item));
+  return values.sort().join('|');
 }

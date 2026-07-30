@@ -12,5 +12,6 @@ import { JsaWorkflowController } from './jsa-workflow.controller';
     OracleJsaWorkflowRepository,
     { provide: JSA_WORKFLOW_REPOSITORY, useExisting: OracleJsaWorkflowRepository },
   ],
+  exports: [JsaWorkflowService],
 })
 export class JsaWorkflowModule {}

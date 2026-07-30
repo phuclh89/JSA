@@ -16,8 +16,9 @@ export type AuthStatus =
 interface AuthState {
   status: AuthStatus;
   user: AuthenticatedUser | null;
+  login(username: string, password: string): Promise<void>;
   refresh(): Promise<void>;
-  logout(): void;
+  logout(): Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -43,17 +44,43 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => void refresh(), [refresh]);
+  const login = useCallback(async (username: string, password: string) => {
+    setStatus('loading');
+    try {
+      const authenticated = await apiClient.post<
+        AuthenticatedUser,
+        { username: string; password: string }
+      >('/auth/login', { username, password });
+      setUser(authenticated);
+      setStatus('authenticated');
+    } catch (error) {
+      setUser(null);
+      if (error instanceof ApiClientError) {
+        if (error.code === 'APPLICATION_USER_NOT_REGISTERED') setStatus('unregistered');
+        else if (error.code === 'APPLICATION_USER_INACTIVE') setStatus('inactive');
+        else if (error.status === 401) setStatus('unauthenticated');
+        else setStatus('error');
+      } else setStatus('error');
+      throw error;
+    }
+  }, []);
+  const logout = useCallback(async () => {
+    try {
+      await apiClient.postEmpty<void>('/auth/logout');
+    } finally {
+      setUser(null);
+      setStatus('unauthenticated');
+    }
+  }, []);
   const value = useMemo<AuthState>(
     () => ({
       status,
       user,
+      login,
       refresh,
-      logout: () => {
-        setUser(null);
-        setStatus('unauthenticated');
-      },
+      logout,
     }),
-    [refresh, status, user],
+    [login, logout, refresh, status, user],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

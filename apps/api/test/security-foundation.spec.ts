@@ -47,7 +47,7 @@ describe('Phase 1 security foundation', () => {
     const user = await new UserContextService(oracle as never, repository as never).resolve({
       identityKey: 'oid-1',
       username: 'user',
-      mode: 'oidc',
+      mode: 'ldap',
     });
     expect(user.userId).toBe('9007199254740993');
     expect(user.permissions).toEqual(['SYSTEM_ADMIN']);
@@ -63,14 +63,14 @@ describe('Phase 1 security foundation', () => {
       { findUser: async () => undefined } as never,
     );
     await expect(
-      missing.resolve({ identityKey: 'x', username: 'x', mode: 'oidc' }),
+      missing.resolve({ identityKey: 'x', username: 'x', mode: 'ldap' }),
     ).rejects.toBeInstanceOf(ApplicationUserNotRegisteredError);
     const inactive = new UserContextService(
       oracle as never,
       { findUser: async () => ({ userId: '1', active: false }) } as never,
     );
     await expect(
-      inactive.resolve({ identityKey: 'x', username: 'x', mode: 'oidc' }),
+      inactive.resolve({ identityKey: 'x', username: 'x', mode: 'ldap' }),
     ).rejects.toBeInstanceOf(ApplicationUserInactiveError);
   });
 

@@ -1,6 +1,18 @@
-import type { MasterDataKind, MasterDataRecord, OrganizationOption } from '@jsams/shared-types';
+import type {
+  MasterDataKind,
+  MasterDataRecord,
+  OrganizationKind,
+  OrganizationOption,
+  OrganizationRecord,
+} from '@jsams/shared-types';
 import type { OracleTransactionContext } from '../../../common/oracle/oracle.types';
-import type { MasterDataInput, MasterDataListQuery, MasterDataPage } from './master-data.types';
+import type {
+  MasterDataInput,
+  MasterDataListQuery,
+  MasterDataPage,
+  OrganizationInput,
+  OrganizationPage,
+} from './master-data.types';
 
 export const MASTER_DATA_REPOSITORY = Symbol('MASTER_DATA_REPOSITORY');
 
@@ -11,6 +23,43 @@ export interface MasterDataRepository {
     siteId?: string,
     rigId?: string,
   ): Promise<OrganizationOption[]>;
+  listOrganizations(
+    context: OracleTransactionContext,
+    kind: OrganizationKind,
+    query: MasterDataListQuery,
+  ): Promise<OrganizationPage>;
+  findOrganizationById(
+    context: OracleTransactionContext,
+    kind: OrganizationKind,
+    id: string,
+  ): Promise<OrganizationRecord | undefined>;
+  validateOrganizationParent(
+    context: OracleTransactionContext,
+    kind: OrganizationKind,
+    input: OrganizationInput,
+  ): Promise<boolean>;
+  createOrganization(
+    context: OracleTransactionContext,
+    kind: OrganizationKind,
+    input: OrganizationInput,
+    actor: string,
+  ): Promise<OrganizationRecord>;
+  updateOrganization(
+    context: OracleTransactionContext,
+    kind: OrganizationKind,
+    id: string,
+    input: OrganizationInput,
+    rowVersion: string,
+    actor: string,
+  ): Promise<OrganizationRecord | undefined>;
+  setOrganizationActive(
+    context: OracleTransactionContext,
+    kind: OrganizationKind,
+    id: string,
+    active: boolean,
+    rowVersion: string,
+    actor: string,
+  ): Promise<OrganizationRecord | undefined>;
   list(
     context: OracleTransactionContext,
     kind: MasterDataKind,

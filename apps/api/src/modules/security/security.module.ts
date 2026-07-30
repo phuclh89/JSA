@@ -6,10 +6,12 @@ import { DataScopeService } from './application/data-scope.service';
 import { SecurityAuditService } from './application/security-audit.service';
 import { UserContextService } from './application/user-context.service';
 import { SECURITY_REPOSITORY } from './domain/security.repository';
-import { OidcTokenValidator } from './infrastructure/oidc-token-validator';
 import { OracleSecurityRepository } from './infrastructure/oracle-security.repository';
 import { SequenceRangeValidatorService } from './infrastructure/sequence-range-validator.service';
 import { SecurityController } from './security.controller';
+import { AuthSessionService } from './application/auth-session.service';
+import { LdapAuthenticationService } from './application/ldap-authentication.service';
+import { EnterpriseIdentityConfigurationService } from './application/enterprise-identity-configuration.service';
 
 @Global()
 @Module({
@@ -21,7 +23,9 @@ import { SecurityController } from './security.controller';
     EnterpriseAuthGuard,
     PermissionGuard,
     DataScopeGuard,
-    OidcTokenValidator,
+    AuthSessionService,
+    LdapAuthenticationService,
+    EnterpriseIdentityConfigurationService,
     OracleSecurityRepository,
     SequenceRangeValidatorService,
     { provide: SECURITY_REPOSITORY, useExisting: OracleSecurityRepository },
@@ -33,7 +37,10 @@ import { SecurityController } from './security.controller';
     EnterpriseAuthGuard,
     PermissionGuard,
     DataScopeGuard,
-    OidcTokenValidator,
+    AuthSessionService,
+    LdapAuthenticationService,
+    EnterpriseIdentityConfigurationService,
+    SECURITY_REPOSITORY,
   ],
 })
 export class SecurityModule {}

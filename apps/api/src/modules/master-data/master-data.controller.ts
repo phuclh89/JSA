@@ -9,6 +9,7 @@ import {
   ActiveMutationDto,
   MasterDataListQueryDto,
   MasterDataMutationDto,
+  OrganizationMutationDto,
 } from './dto/master-data.dto';
 
 @Controller('master-data')
@@ -25,6 +26,71 @@ export class MasterDataController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.service.scopeOptions(type, siteId, rigId, user);
+  }
+
+  @Get('organization/:kind')
+  organizations(
+    @Param('kind') kind: string,
+    @Query() query: MasterDataListQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.listOrganizations(this.service.assertOrganizationKind(kind), query, user);
+  }
+
+  @Post('organization/:kind')
+  createOrganization(
+    @Param('kind') kind: string,
+    @Body() body: OrganizationMutationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.createOrganization(this.service.assertOrganizationKind(kind), body, user);
+  }
+
+  @Put('organization/:kind/:id')
+  updateOrganization(
+    @Param('kind') kind: string,
+    @Param('id') id: string,
+    @Body() body: OrganizationMutationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.updateOrganization(
+      this.service.assertOrganizationKind(kind),
+      id,
+      body,
+      user,
+    );
+  }
+
+  @Post('organization/:kind/:id/activate')
+  activateOrganization(
+    @Param('kind') kind: string,
+    @Param('id') id: string,
+    @Body() body: ActiveMutationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.setOrganizationActive(
+      this.service.assertOrganizationKind(kind),
+      id,
+      true,
+      body.rowVersion,
+      user,
+    );
+  }
+
+  @Post('organization/:kind/:id/deactivate')
+  deactivateOrganization(
+    @Param('kind') kind: string,
+    @Param('id') id: string,
+    @Body() body: ActiveMutationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.setOrganizationActive(
+      this.service.assertOrganizationKind(kind),
+      id,
+      false,
+      body.rowVersion,
+      user,
+    );
   }
 
   @Get(':kind/selection')

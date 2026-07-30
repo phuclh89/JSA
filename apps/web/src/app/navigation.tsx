@@ -31,9 +31,18 @@ export const navigationItems: NavigationItem[] = [
     area: 'operations',
     icon: <SettingOutlined />,
   },
+  {
+    key: '/operations/attachment-library',
+    label: 'Attachment Library',
+    permission: 'ATTACHMENT_LIBRARY_ADMIN',
+    area: 'operations',
+    icon: <SettingOutlined />,
+  },
   ...(
     [
       ['/operations/job-types', 'Job Types'],
+      ['/operations/rigs', 'Rigs'],
+      ['/operations/departments', 'Departments'],
       ['/operations/hazard-prompts', 'Hazard Prompts'],
       ['/operations/positions', 'Positions'],
       ['/operations/tool-categories', 'Tool Categories'],
@@ -43,6 +52,11 @@ export const navigationItems: NavigationItem[] = [
       ['/operations/system-parameters', 'System Parameters'],
       ['/operations/risk-matrices', 'Risk Matrices'],
       ['/operations/rig-matrix-assignments', 'Rig Matrix Assignments'],
+      ['/operations/access/users', 'User Access Administration'],
+      ['/operations/access/roles', 'Roles and Permissions'],
+      ['/operations/access/approver-resolution', 'Approver Resolution'],
+      ['/operations/access/uat-readiness', 'Approval UAT Readiness'],
+      ['/operations/access/audit', 'Access Audit'],
     ] as const
   ).map(([key, label]) => ({
     key,

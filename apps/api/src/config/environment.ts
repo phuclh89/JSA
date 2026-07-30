@@ -29,11 +29,43 @@ const environmentSchema = z
     ORACLE_CONNECTION_TIMEOUT_MS: positiveInteger.default(10000),
     ORACLE_ENABLE_EVENTS: booleanString.default('false'),
     RUN_ORACLE_INTEGRATION_TESTS: booleanString.default('false'),
-    AUTH_MODE: z.enum(['development', 'oidc']).default('development'),
-    OIDC_ENABLED: booleanString.default('false'),
-    OIDC_TENANT_ID: z.string().optional(),
-    OIDC_CLIENT_ID: z.string().optional(),
-    OIDC_AUDIENCE: z.string().optional(),
+    AUTH_MODE: z.enum(['development', 'ldap']).default('development'),
+    LDAP_AUTH_STRATEGY: z.enum(['SERVICE_SEARCH', 'DIRECT_BIND']).default('SERVICE_SEARCH'),
+    LDAP_HOST: z.string().optional(),
+    LDAP_PORT: z.coerce.number().int().min(1).max(65535).default(389),
+    LDAP_BIND_DN: z.string().optional(),
+    LDAP_BIND_PASSWORD: z.string().optional(),
+    LDAP_SEARCH_BASE: z.string().optional(),
+    LDAP_USERNAME_ATTRIBUTE: z
+      .string()
+      .regex(/^[A-Za-z][A-Za-z0-9-]*$/)
+      .default('sAMAccountName'),
+    LDAP_EMAIL_ATTRIBUTE: z
+      .string()
+      .regex(/^[A-Za-z][A-Za-z0-9-]*$/)
+      .default('mail'),
+    LDAP_DISPLAY_NAME_ATTRIBUTE: z
+      .string()
+      .regex(/^[A-Za-z][A-Za-z0-9-]*$/)
+      .default('displayName'),
+    LDAP_IDENTITY_ATTRIBUTE: z
+      .string()
+      .regex(/^[A-Za-z][A-Za-z0-9-]*$/)
+      .default('objectGUID'),
+    LDAP_UPN_SUFFIX: z.string().min(1).default('pvdrilling.com.vn'),
+    LDAP_NETBIOS_DOMAIN: z.string().min(1).default('PVDRILLING'),
+    LDAP_TLS_MODE: z.enum(['LDAPS', 'STARTTLS', 'NONE']).default('STARTTLS'),
+    LDAP_TLS_LEGACY_COMPATIBILITY: booleanString.default('false'),
+    LDAP_CONNECT_TIMEOUT_MS: positiveInteger.default(5000),
+    LDAP_OPERATION_TIMEOUT_MS: positiveInteger.default(10000),
+    LDAP_ALLOW_USERNAME_FALLBACK: booleanString.default('false'),
+    AUTH_SESSION_SECRET: z.string().optional(),
+    AUTH_SESSION_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(480),
+    AUTH_SESSION_COOKIE_NAME: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]+$/)
+      .default('jsams_session'),
+    AUTH_SESSION_COOKIE_SECURE: booleanString.default('false'),
     LOCAL_SITE_CODE: z.string().min(1).default('DEV'),
     LOCAL_SITE_ID: z.string().optional(),
     JSA_PERMISSION_VIEW: optionalNonEmpty,
@@ -52,6 +84,13 @@ const environmentSchema = z
       (value) => (value === '' ? undefined : value),
       z.enum(['GLOBAL', 'SITE']).optional(),
     ),
+    ATTACHMENT_STORAGE_ROOT: optionalNonEmpty,
+    ATTACHMENT_MAX_FILE_SIZE_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1_048_576)
+      .max(104_857_600)
+      .default(52_428_800),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   })
   .superRefine((value, context) => {
@@ -62,21 +101,57 @@ const environmentSchema = z
         message: 'development authentication is forbidden in production',
       });
     }
+    if (value.AUTH_MODE === 'ldap' && (!value.LDAP_HOST || !value.LDAP_SEARCH_BASE)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['LDAP_HOST'],
+        message: 'LDAP host and search base are required in LDAP mode',
+      });
+    }
     if (
-      value.OIDC_ENABLED &&
-      (!value.OIDC_TENANT_ID || !value.OIDC_CLIENT_ID || !value.OIDC_AUDIENCE)
+      value.AUTH_MODE === 'ldap' &&
+      value.LDAP_AUTH_STRATEGY === 'SERVICE_SEARCH' &&
+      (!value.LDAP_BIND_DN || !value.LDAP_BIND_PASSWORD)
     ) {
       context.addIssue({
         code: 'custom',
-        path: ['OIDC_ENABLED'],
-        message: 'OIDC tenant, client, and audience are required when OIDC is enabled',
+        path: ['LDAP_BIND_DN'],
+        message: 'LDAP bind DN and password are required for SERVICE_SEARCH',
       });
     }
-    if (value.AUTH_MODE === 'oidc' && !value.OIDC_ENABLED) {
+    if (
+      value.AUTH_MODE === 'ldap' &&
+      (!value.AUTH_SESSION_SECRET || value.AUTH_SESSION_SECRET.length < 32)
+    ) {
       context.addIssue({
         code: 'custom',
-        path: ['OIDC_ENABLED'],
-        message: 'must be true when AUTH_MODE=oidc',
+        path: ['AUTH_SESSION_SECRET'],
+        message: 'a session secret of at least 32 characters is required in LDAP mode',
+      });
+    }
+    if (
+      value.NODE_ENV === 'production' &&
+      value.AUTH_MODE === 'ldap' &&
+      value.LDAP_TLS_MODE === 'NONE'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['LDAP_TLS_MODE'],
+        message: 'unencrypted LDAP is forbidden in production',
+      });
+    }
+    if (value.NODE_ENV === 'production' && value.LDAP_TLS_LEGACY_COMPATIBILITY) {
+      context.addIssue({
+        code: 'custom',
+        path: ['LDAP_TLS_LEGACY_COMPATIBILITY'],
+        message: 'legacy insecure LDAP TLS compatibility is forbidden in production',
+      });
+    }
+    if (value.NODE_ENV === 'production' && !value.AUTH_SESSION_COOKIE_SECURE) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AUTH_SESSION_COOKIE_SECURE'],
+        message: 'secure session cookies are required in production',
       });
     }
     if (value.ORACLE_POOL_MIN > value.ORACLE_POOL_MAX) {
@@ -93,13 +168,51 @@ const environmentSchema = z
         message: 'is required when ORACLE_CLIENT_MODE=thick',
       });
     }
-    const jsaPermissionValues = [value.JSA_PERMISSION_VIEW,value.JSA_PERMISSION_CREATE,value.JSA_PERMISSION_EDIT,value.JSA_PERMISSION_CANCEL];
-    if (jsaPermissionValues.some(Boolean) && !jsaPermissionValues.every(Boolean)) context.addIssue({ code:'custom', path:['JSA_PERMISSION_VIEW'], message:'all four JSA permission mappings must be configured together' });
-    const workflowPermissionValues=[value.JSA_PERMISSION_SUBMIT,value.JSA_PERMISSION_APPROVE,value.JSA_PERMISSION_RETURN,value.JSA_PERMISSION_REJECT,value.JSA_PERMISSION_COMMENT,value.JSA_PERMISSION_WORKFLOW_VIEW,value.JSA_PERMISSION_WORKFLOW_ADMIN];
-    if(workflowPermissionValues.some(Boolean)&&!workflowPermissionValues.every(Boolean))context.addIssue({code:'custom',path:['JSA_PERMISSION_SUBMIT'],message:'all seven workflow permission mappings must be configured together'});
-    if(value.NODE_ENV==='production'&&!workflowPermissionValues.every(Boolean))context.addIssue({code:'custom',path:['JSA_PERMISSION_SUBMIT'],message:'workflow permission mappings are required in production'});
-    if (Boolean(value.JSA_NUMBER_TEMPLATE) !== Boolean(value.JSA_NUMBER_UNIQUENESS_SCOPE)) context.addIssue({ code:'custom', path:['JSA_NUMBER_TEMPLATE'], message:'JSA numbering template and uniqueness scope must be configured together' });
-    if (value.JSA_NUMBER_TEMPLATE && !value.JSA_NUMBER_TEMPLATE.includes('{sequence}')) context.addIssue({ code:'custom', path:['JSA_NUMBER_TEMPLATE'], message:'must include {sequence}' });
+    const jsaPermissionValues = [
+      value.JSA_PERMISSION_VIEW,
+      value.JSA_PERMISSION_CREATE,
+      value.JSA_PERMISSION_EDIT,
+      value.JSA_PERMISSION_CANCEL,
+    ];
+    if (jsaPermissionValues.some(Boolean) && !jsaPermissionValues.every(Boolean))
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_PERMISSION_VIEW'],
+        message: 'all four JSA permission mappings must be configured together',
+      });
+    const workflowPermissionValues = [
+      value.JSA_PERMISSION_SUBMIT,
+      value.JSA_PERMISSION_APPROVE,
+      value.JSA_PERMISSION_RETURN,
+      value.JSA_PERMISSION_REJECT,
+      value.JSA_PERMISSION_COMMENT,
+      value.JSA_PERMISSION_WORKFLOW_VIEW,
+      value.JSA_PERMISSION_WORKFLOW_ADMIN,
+    ];
+    if (workflowPermissionValues.some(Boolean) && !workflowPermissionValues.every(Boolean))
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_PERMISSION_SUBMIT'],
+        message: 'all seven workflow permission mappings must be configured together',
+      });
+    if (value.NODE_ENV === 'production' && !workflowPermissionValues.every(Boolean))
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_PERMISSION_SUBMIT'],
+        message: 'workflow permission mappings are required in production',
+      });
+    if (Boolean(value.JSA_NUMBER_TEMPLATE) !== Boolean(value.JSA_NUMBER_UNIQUENESS_SCOPE))
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_NUMBER_TEMPLATE'],
+        message: 'JSA numbering template and uniqueness scope must be configured together',
+      });
+    if (value.JSA_NUMBER_TEMPLATE && !value.JSA_NUMBER_TEMPLATE.includes('{sequence}'))
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_NUMBER_TEMPLATE'],
+        message: 'must include {sequence}',
+      });
   });
 
 export type Environment = z.infer<typeof environmentSchema>;

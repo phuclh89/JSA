@@ -21,7 +21,10 @@ Only confirmed business behavior belongs here; unconfirmed details are listed as
 - **Basic Job Step**: an ordered item in a separate, versioned execution-oriented list.
 - **Position** and **Tool**: governed reference data selected for a Basic Job Step and snapshotted into the version.
 - **Risk Matrix**: the rig-specific matrix used to assess Initial and Residual Risk.
+- **Source JSA language**: English. Language is assigned by the system and is not selected during JSA creation.
 - **Translation**: a separate language-specific object tied to exactly one Published source JSA Version.
+- **Temporary JSA Number**: the non-operational identifier assigned while a JSA remains an unpublished Working Version.
+- **Official JSA Number**: the immutable business number assigned atomically only when the first JSA Version is finally approved and Published.
 
 ## 3. JSA Master and version roles
 
@@ -30,6 +33,11 @@ A JSA Master provides continuity while its versions preserve change over time.
 - A Master may have multiple historical versions but no more than one Current Version.
 - A JSA Master may have at most one active Working Version.
 - A Working Version is editable and is not operationally published content.
+- A creator must be able to retrieve their own active Draft or Returned Working Versions and resume authoring after leaving the worksheet. This personal list remains subject to the user's active application permission and Site/Rig/Department data scope.
+- New JSAs are not classified by Job Type. Creation captures Owner Site, Rig, Department, the effective Risk Matrix Version, and system-assigned English.
+- Owner Site, Rig, and Department are governed ownership context selected when the JSA is created. The worksheet displays their business codes and names as read-only context; users do not edit raw identifiers or transfer this context from General Information.
+- Location and Personnel are not part of the JSA General Information required or collected during creation or revision.
+- A new JSA receives only a Temporary JSA Number during Draft and approval. That temporary value is replaced by the Official JSA Number only at initial publication.
 - A Base Version identifies the version used to seed a Working Version and provides revision provenance.
 - Updating a Published JSA requires checkout and creates a new Working Version; it does not edit the Current Version.
 - Checkout prevents another user from creating or editing a competing Working Version for the same JSA Master.
@@ -63,27 +71,31 @@ The confirmed relationship is:
 JSA Version
   -> one or more Tasks
        -> one or more Hazards per Task
-            -> one or more Controls per Hazard
+            -> exactly one Control per Hazard
 ```
 
 - A Hazard belongs to exactly one Task within a version.
 - A Control belongs to exactly one Hazard within a version.
 - A Task may contain multiple Hazards.
-- A Hazard may contain multiple Controls.
+- A Hazard must contain exactly one Control. The Hazard and its Control form one assessment pair and cannot be created, saved, submitted, copied, or versioned independently.
 - These records are version-owned snapshots and do not mutate equivalent records in another version.
 
 ### Hazard Assessment Prompts
 
 - A JSA Version may select multiple Hazard Assessment Prompts.
 - Prompt selections are snapshotted by version.
-- Every selected prompt must be reflected in a relevant Hazard or Control.
-- Submission is blocked when configured prompt-coverage validation fails.
+- Each prompt is a simple independent checkbox selection.
+- A selected prompt does not require a mapping to a Task Hazard or Control.
+- Prompt coverage mapping is not collected and does not block save or submission.
+- The confirmed PV Drilling rig checklist contains: Hard hat; Disposable coverall; Use of ladder; MSDS; Well control procedures agreed; Gloves (heat resistant/other); Safety goggles; Fall protection/ Safety Harness; Gas test; Third party involved; Impact Glove; Safety shields; Signs/barriers; Rescue plan required; Fire-fighting equipment; Safety boots/shoe (rubber); Hearing protection; Environment Hazards Reviewed; Simultaneous operations (SIMOPS); Isolations required; Safety glasses; Dust mask; Weather reports discussed; Communication (Radio/Banksman); and Lifejacket/Work Vest.
 
 ## 6. Initial and Residual Risk
 
 - Risk is assessed per Hazard, not once for the whole Task or JSA.
 - **Initial Risk** represents the assessed risk before the Hazard's Controls are applied.
 - **Residual Risk** represents the assessed risk after the selected Controls are applied.
+- Residual Severity is inherited from Initial Severity for the same Hazard and cannot be adjusted independently. Only Residual Likelihood is reassessed after Controls.
+- Initial Likelihood, Initial Severity, and Residual Likelihood are selected from the applicable Matrix definitions through reference popups rather than compact dropdowns. Selecting a reference row applies its governed Matrix level to the Hazard.
 - Both values must be evaluated with the Risk Matrix applicable to the owning rig and version context.
 - Controls must not erase or overwrite the Initial Risk assessment.
 - The matrix identity and sufficient assessment inputs/results must be snapshotted so historical risk remains interpretable.
@@ -92,7 +104,7 @@ JSA Version
 
 - A submitted JSA must have at least one Task.
 - Every active Task must have at least one Hazard.
-- Every Hazard must have Initial Likelihood and Initial Severity, at least one Control, and Residual Likelihood and Residual Severity.
+- Every Hazard must have Initial Likelihood and Initial Severity, exactly one Control, and Residual Likelihood. Residual Severity must equal the Initial Severity.
 - Risk Rating and Result are resolved from the applicable Matrix Cell and are not manually entered.
 - All Hazards in one JSA Version use the same Matrix Version.
 - Submission is blocked when Residual Risk is in a prohibited result category.
@@ -142,8 +154,13 @@ Submission requires all of the following:
 - A rig uses either an approved 3x3 matrix or an approved 5x5 matrix for the relevant JSA context.
 - A JSA must use the matrix applicable to its owning rig; users must not substitute another rig's matrix merely because they can view or copy that JSA.
 - Matrix dimensions, labels, thresholds, colors, and result categories are governed configuration rather than hard-coded universal rules.
+- Each configured Risk Result may carry its governed name, semantic meaning, description, display color, operational guidance, and prohibited-Residual-Risk rule. JSA creation, revision, and approval review show the applied Matrix Version's Risk Colour Overview so users can interpret each configured result and required response.
+- The JSA Risk Matrix block shows the Probability definitions, Severity definitions, matrix cells, and Risk Colour Overview together in one continuous view; users do not open a separate reference popup merely to interpret the matrix.
+- The confirmed PV Drilling 5x5 Probability definitions are `1 — Very low / Rare`, `2 — Low / Unlikely`, `3 — Possible / Moderate`, `4 — Hight Likely`, and `5 — Almost Certain`.
+- The confirmed PV Drilling 5x5 Severity definitions are `A — Slight`, `B — Minor`, `C — Moderate`, `D — Major`, and `E — Catastrophic`.
+- Its four governed Risk Colour zones are Dark Green, Light Green, Yellow, and Red. Dark Green and Light Green require continuous improvement, Yellow requires risk reduction to ALARP, and Red requires additional controls, blocks Residual Risk acceptance, and requires Onshore Management consultation if the risk remains Red.
 - The applied matrix/version must be snapshotted or otherwise historically resolvable for Published versions.
-- The exact matrix definitions and rules for matrix changes remain open business decisions.
+- Exact 3x3 definitions and governance for future Matrix-definition changes remain open business decisions.
 
 ## 11. Create and approval workflow
 
@@ -170,9 +187,11 @@ Creator
 - Only the current workflow assignee may execute an approval action.
 - Return and Reject require a comment.
 - Return retains the Working Version for correction and resubmission.
+- While correcting a Returned Working Version, the creator must see the accumulated approval history on the same JSA screen, including cycle, action, actor, status transition, time, and comments from prior steps.
 - Reject does not modify the Current Published version.
+- An approver reviews the complete exact Working JSA Version and records Approve, Return, Reject, or Comment on one continuous Workflow Review screen. Approval must not require opening a separate JSA screen.
 - Workflow step, role, assignee, actor, action, comment, previous state, next state, and timestamp remain traceable.
-- Final publication is atomic: it makes the old Current Version Superseded, makes the Working Version Published, updates `CURRENT_VERSION_ID`, and clears `WORKING_VERSION_ID` and checkout information.
+- Final publication is atomic: for an initially published JSA it assigns the Official JSA Number, makes the Working Version Published, updates `CURRENT_VERSION_ID`, and clears `WORKING_VERSION_ID` and checkout information. For a revision, it also makes the old Current Version Superseded.
 
 ## 12. Update, Return, Reject, Cancel, Superseded, and Retired
 
@@ -198,6 +217,7 @@ No Return, Reject, Cancel, Supersede, or Retire action may erase approval histor
 
 ## 14. Translation lifecycle and OUTDATED printing
 
+- Every source JSA is created and approved in English; the creator does not select a language.
 - A Translation is a separate language-specific object tied to exactly one Published source JSA Version.
 - The confirmed workflow is **OIM assigns -> Translator translates -> STC reviews and approves or returns -> Published**.
 - Translation assignment, work, review, approval or return, and publication history remain traceable.
@@ -226,6 +246,12 @@ No Return, Reject, Cancel, Supersede, or Retire action may erase approval histor
 
 - Every replicated business table has an explicit primary key.
 - Business identifiers use Oracle sequences; `MAX(ID) + 1` is forbidden.
+- Draft and in-approval JSAs use only a Temporary JSA Number.
+- Initial publication assigns the Official JSA Number in the format **`<Rig code>-<Department code>-NNNN`**.
+- `NNNN` is a four-digit counter owned by the exact Rig/Department pair, beginning at `0001` and ending at `9999`.
+- Counter allocation, final approval, publication, and replacement of the Temporary JSA Number occur in one transaction. The Rig/Department counter is locked so concurrent approvals cannot receive the same value.
+- An Official JSA Number is immutable. Revisions and historical versions retain the same Official JSA Number owned by their JSA Master.
+- Rig and Department codes are governed organization data. Administrators manage them through JSAMS with permission, data-scope, audit, optimistic-lock, hierarchy, and deactivate/reactivate controls; records are not physically deleted.
 - Each site uses a non-overlapping sequence range.
 - GoldenGate replicates source primary and foreign key values unchanged.
 - A target site must not regenerate identifiers for replicated records.
@@ -236,26 +262,81 @@ No Return, Reject, Cancel, Supersede, or Retire action may erase approval histor
 
 Final site identifiers, sequence ranges, conflict-resolution rules, and GoldenGate topology remain open.
 
-## 17. Permission, workflow role, and data scope
+### Governed Attachment Library
 
-Authorization has three separate business dimensions:
+- Attachments are optional supporting material for a JSA.
+- Attachments are governed in a reusable library scoped to exactly one Site, Rig, and Department. Administrators may create nested folders within that fixed scope.
+- Upload and replacement are administration actions requiring the dedicated Attachment Library permission and effective action scope. JSA creators do not upload files from the worksheet; they select from the active library for the JSA's exact Rig and Department.
+- The JSA attachment picker is an Explorer view whose Site, Rig, and Department scope is locked to the JSA being created or revised. Creators navigate that governed folder tree and select exact file versions without changing scope, creating folders, uploading, or replacing files.
+- File binaries are stored outside Oracle on the site's configured real or mapped filesystem. Oracle stores folder, logical asset, immutable file-version, checksum, size, content type, relative storage key, ownership, and association metadata.
+- Binary synchronization between sites is performed by an approved third-party product. GoldenGate synchronizes attachment metadata only and never transfers file bytes.
+- Replacing a library file creates a new immutable file version. It must not overwrite the previous binary or change an existing Published JSA Version.
+- Each JSA attachment association identifies the exact immutable library file version selected. A historical JSA therefore retains the file version used when that JSA Version was authored, while a new Working Version may select the current library version.
+- File selection and download require effective view scope for the attachment's Site/Rig/Department. Attachment administration additionally requires effective action scope.
+- The initial governed file policy allows PDF, Microsoft Office document formats, JPG, and PNG, with a maximum size of 50 MB per file.
+
+## 17. Enterprise authentication and JSAMS application users
+
+Authentication and JSAMS authorization are separate:
+
+```text
+User submits enterprise username and password to JSAMS over TLS
+  -> JSAMS validates the credentials against the internal Active Directory through LDAP
+  -> JSAMS resolves the mapped active application user
+  -> JSAMS evaluates application authorization
+```
+
+- Credential authority, password policy, password changes, account lockout, and account lifecycle remain owned by the enterprise Active Directory.
+- JSAMS receives the password only for the duration of an LDAP login request and passes it to Active Directory for validation. It must never persist, hash, cache, audit, log, reproduce, or return that password.
+- JSAMS does not create, change, reset, recover, lock, unlock, or otherwise administer enterprise passwords or Active Directory accounts.
+- A **JSAMS application user** is the internal `SYS_USER` authorization representation of an existing enterprise identity; it is not a local-login account.
+- The application user has a required, unique, canonical enterprise username, such as `phuclh`, for administration, assignment, display, lookup, audit, and operational processing.
+- Active Directory `objectGUID` is the preferred stable link between the LDAP identity and `SYS_USER`. Username, email, and display name are distinct concepts; email and display name are profile attributes, not stable authorization keys.
+- LDAP attribute mapping and accepted username forms must be environment-configurable. The confirmed Direct Bind forms are the submitted value, its normalized account name, `<account>@pvdrilling.com.vn`, and `PVDRILLING\<account>`; duplicate forms are removed. JSAMS must not apply any other account-name transformation without approval.
+- Successful enterprise authentication does not provision or authorize a user automatically. The mapped `SYS_USER` must already exist, be active, and match the authenticated identity; an unregistered, inactive, or incorrectly mapped user is denied.
+- Conversely, an active application user cannot enter JSAMS when Active Directory rejects the LDAP credentials.
+- Deactivating a JSAMS application user blocks only JSAMS access. It does not disable, delete, unlock, or modify the corresponding enterprise account.
+- Application roles, permissions, explicit user permission overrides, Site/Rig/Department data scopes, and workflow-role assignments are governed inside JSAMS unless a future confirmed synchronization rule states otherwise.
+- Historical workflow and audit records retain the identity snapshots needed to remain understandable after later username, display-name, email, role, scope, or organizational changes.
+- Enterprise user passwords must never appear in Oracle business/security data, logs, audit records, notification payloads, frontend storage, test fixtures, bootstrap inputs, or documentation. LDAP service-account credentials are deployment secrets, not business data.
+
+## 18. Permission, workflow role, and data scope
+
+JSAMS authorization evaluates these independent dimensions after successful enterprise authentication and active-user resolution:
 
 - **Permission**: what action a user is allowed to perform, such as create, submit, approve, copy, review, translate, print, administer, or retire.
 - **Workflow role**: why a user is eligible to act at a particular stage, such as Creator, Department Head, STC, OIM, or Rig Manager.
 - **Data scope**: which sites, rigs, departments, and records the user may act upon.
+- **Document state**: whether the requested action is valid for the JSA's current lifecycle state.
+- **Current assignee**: whether the workflow task is assigned to this specific user now.
+- **Owner-site rule**: whether the action is permitted for the record's owning site.
 
-Having one dimension does not imply the others. A user must satisfy the required permission, workflow-role eligibility, and data scope. Frontend visibility is not authorization; the backend is the final enforcement boundary. Exact permission codes, delegation, substitution, and role-to-organization mapping remain open.
+Having one dimension does not imply the others. An application role is not an Active Directory group; a permission is not a workflow role; a workflow role is not current assignment; and a role does not imply data scope. Frontend visibility is not authorization, and `SYSTEM_ADMIN` does not bypass required workflow or business checks unless an explicitly confirmed rule grants that behavior. The backend is the final enforcement boundary.
 
-## 18. Printing and historical versions
+Effective permission precedence remains:
+
+```text
+Explicit user DENY
+  -> Explicit user ALLOW
+  -> Active role grant
+  -> Default deny
+```
+
+For example, an active `phuclh` application user with role `JSA_APPROVER`, effective permission `JSA_APPROVE`, workflow role `STC`, and Site/Rig scope may approve only when enterprise authentication succeeds, the JSA is in scope and in an approvable state, the current step requires STC, and the current workflow task is assigned to that user. Any missing check denies the action.
+
+## 19. Printing and historical versions
 
 - Current operational printing uses a Published version.
 - A Working, Returned, Rejected, or Cancelled version must not be printed as an approved operational JSA.
 - An OUTDATED Translation is blocked from current operational printing.
 - Published and Superseded historical versions remain printable only as explicitly identified historical records and subject to permission/data scope.
 - A printed document must identify the JSA Master, exact version, status, owning site/rig, language, and print time sufficiently to prevent confusion with another version.
-- Templates, watermark text, copy numbering, signatures, offline validity, and print-audit retention remain open decisions.
+- The confirmed current-source JSA print form follows the supplied PV Drilling `JOB SAFETY ANALYSIS POLICY` layout with document reference `P1.04.09`: governed header/ownership metadata, Hazard Assessment Prompt checklist, Probability and Severity references, Risk Matrix and Risk Colour Overview, Task/Hazard/Control assessment, and Basic Job Step content are populated from the exact immutable Published Version.
+- `PERSONAL INVOLVED`, its blank Name/Position/Company/Signature rows, the PTW suspension/stop-work note, and the complete Work Leader Debrief form are intentionally layout-only sections and do not load application data.
+- JSAMS renders the form as HTML and invokes the browser print flow; PDF is produced through the browser's print/save-to-PDF capability rather than a separate server-side PDF document.
+- Watermark text, copy numbering, completed paper signatures, offline validity, and print-audit retention remain open decisions.
 
-## 19. Confirmed business rules
+## 20. Confirmed business rules
 
 The following are confirmed:
 
@@ -263,9 +344,9 @@ The following are confirmed:
 2. Updating a Published JSA requires checkout; checkout prevents competing Working Versions without modifying Current Published content, and Undo Checkout is privileged and audited.
 3. Published versions are immutable; updates use a Working Version with Base Version provenance while the Current Published version remains operational.
 4. A Working Version based on a Published version is compared with its Base Version by logical identity, and changes are classified as ADDED, MODIFIED, DELETED, MOVED, or UNCHANGED for approver review.
-5. Tasks contain multiple Hazards, Hazards contain multiple Controls, and required Task, Hazard, Control, and risk fields are validated at submission.
-6. Initial and Residual Risk are assessed per Hazard, resolved from one Matrix Version's cells, and prohibited Residual Risk blocks submission.
-7. Hazard Assessment Prompt selections are version snapshots, must be reflected in relevant Hazards or Controls, and may block submission when configured coverage validation fails.
+5. Tasks contain multiple Hazards; every Hazard is paired with exactly one Control, and required Task, Hazard, Control, and risk fields are validated during save and submission.
+6. Initial and Residual Risk are assessed per Hazard and resolved from one Matrix Version's cells. Residual Severity is locked to Initial Severity, only Residual Likelihood is independently reassessed, and prohibited Residual Risk blocks submission.
+7. Hazard Assessment Prompts are independent checkbox selections snapshotted with the JSA Version. They do not require Task Hazard or Control coverage mapping, and coverage does not block save or submission.
 8. Basic Job Steps are a separate ordered, versioned list with mandatory description, Performer Position, Supervisor Position, and Tool or configured N/A validation at submission.
 9. Duplicate step-role Position or Tool associations are prohibited; only active, in-scope references may be newly selected while historical snapshots remain visible.
 10. Position, Tool, risk, and other version-owned content snapshots preserve historical meaning.
@@ -282,12 +363,36 @@ The following are confirmed:
 21. Site ownership, permission, workflow role, and data scope are independently enforced.
 22. Replicated identifiers are sequence-generated at the owning site and preserved by GoldenGate.
 23. Historical printing must identify the exact immutable version and status.
+24. Enterprise credentials are validated by Active Directory through LDAP Direct Bind using the confirmed submitted/account/UPN/NetBIOS forms. JSAMS receives a password only transiently during login and never persists, hashes, caches, logs, audits, returns, or manages it.
+25. A JSAMS application user is an internal `SYS_USER` representation of an enterprise identity, not a local-credential account, with a canonical enterprise username and Active Directory `objectGUID` as the preferred stable identity link.
+26. Successful LDAP authentication alone does not grant JSAMS access. The mapped application user must exist, be active, and satisfy every applicable permission, override, data-scope, document-state, workflow-role, current-assignee, and owner-site check.
+27. Application role, permission, explicit override, data scope, workflow role, and current assignment are independent; no dimension silently supplies another, and frontend visibility is never authorization.
+28. Deactivating a JSAMS application user blocks JSAMS access only and never changes the corresponding Active Directory account.
+29. Historical workflow and audit evidence preserves the identity snapshots needed to remain meaningful after later identity-profile or assignment changes.
+30. New JSAs have no Job Type classification; Job Type is not requested or assigned during creation.
+31. Every source JSA is created in English. Language is system-assigned rather than user-selected, and any non-English content follows the separate Translation lifecycle after source publication.
+32. A creator can retrieve and resume their own active Draft or Returned Working Versions after leaving the worksheet, provided the records remain within the creator's effective application permission and data scope.
+33. Draft and approval use a Temporary JSA Number. Initial publication atomically replaces it with an immutable Official JSA Number formatted `<Rig code>-<Department code>-NNNN`, where `NNNN` is the concurrency-safe `0001`–`9999` counter for that exact Rig/Department pair.
+34. Rig and Department are governed, auditable organization data administered in JSAMS. Their parent hierarchy cannot be moved after creation, and deactivation is used instead of physical deletion.
+35. JSA General Information displays Status as non-editable state and displays Owner Site, Rig, and Department by governed code and name rather than editable identifiers. Job Title is the only authored general-information text field. Job Description, Permit to Work selection/reference, Location, and Personnel are not collected as JSA authoring fields.
+36. Procedure References are not collected during JSA creation or revision and their absence does not create a validation warning or block submission. Legacy Procedure Reference snapshots remain historical data but are not carried forward by current Working Version saves.
+37. Attachments are optional and are selected from a governed library for the JSA's exact Site/Rig/Department scope; creators do not upload attachment binaries from the JSA worksheet.
+38. Attachment binaries are stored on the configured site filesystem and synchronized by an approved third-party product. Oracle and GoldenGate contain and replicate metadata only.
+39. Replacing a library attachment creates an immutable new file version. Every JSA attachment association retains the exact selected version so Published and historical JSAs never silently change content.
+40. Workflow Review is a single continuous screen: the approver sees the complete exact Working JSA Version in read-only form and records Approve, Return, Reject, or Comment without opening a separate JSA screen.
+41. The applied Matrix Version governs Probability and Severity definitions plus Risk Result meaning, description, display color, operational guidance, and any prohibited-Residual-Risk rule. Its Risk Colour Overview is visible during JSA creation, revision, and approval review.
+42. The JSA Risk Matrix presents Probability definitions, Severity definitions, matrix cells, and Risk Colour Overview together in one continuous block; the row-level risk selectors remain the interaction used to choose Initial Probability, Initial Severity, and Residual Probability.
+43. The confirmed PV Drilling 5x5 Matrix uses the five Probability definitions, five Severity definitions, four Risk Colour zones, and explicit 25-cell mapping recorded in the applied governed Matrix Version; a later material change creates a new version rather than rewriting a version already assigned or referenced.
+44. The confirmed 25-item PV Drilling Hazard Assessment Prompt checklist is governed at Rig scope, presented as independent checkboxes, and snapshotted only when selected into a JSA Version.
+45. The JSA attachment picker is an Explorer locked to the JSA's exact Site/Rig/Department. It supports governed folder navigation and exact-version selection only; library administration remains a separate permission and interface.
+46. A Returned Working Version displays its complete accumulated approval history on the same correction screen, including prior Submit, Approve, Return, Reject, Publish, and Comment evidence where present; resubmission appends a new cycle and never replaces prior history.
+47. A read-only JSA presents immutable content as readable static information. Authoring controls, selection controls, add/insert/delete actions, picker launchers, and editable-only table columns are not shown. The complete governed Hazard Assessment Prompt list remains visible with clear selected/not-selected state, while historical selected snapshots remain visible even if a Prompt is no longer in the current list; risk values, Position snapshots, Tool snapshots, and exact Attachment snapshots also remain clearly visible.
+48. Current operational JSA printing is available only for the exact current Published source JSA Version. The approved HTML print form populates business content through Basic Job Step from that immutable Version; every section beginning with `PERSONAL INVOLVED` is an intentionally blank form layout for manual completion, and browser printing is the PDF-generation mechanism.
 
-## 20. Open business decisions
+## 21. Open business decisions
 
 The following require explicit business confirmation before implementation:
 
-- final JSA numbering format and uniqueness scope;
 - exact conditions requiring Rig Manager approval;
 - approval delegation, substitution, reassignment, and timeout/escalation rules;
 - whether and how a Rejected Working Version may be reopened or resubmitted;
@@ -300,8 +405,16 @@ The following require explicit business confirmation before implementation:
 - cross-rig copy eligibility, carried fields, mapping failures, and mandatory reapproval;
 - Position and Tool retirement/reactivation rules for new Working Versions;
 - exact permission codes, organizational role mapping, data-scope rules, and emergency access;
-- print templates, watermarking, signatures, copy controls, offline validity, and audit retention;
+- automatic first-login provisioning versus manual-only registration or governed synchronization;
+- Active Directory group-to-JSAMS-role mapping and any HR/AD role synchronization;
+- HR-to-user profile synchronization and display-name/email refresh frequency;
+- username-change handling, domain-collision handling, and multi-domain identity rules;
+- the transition plan for existing `SYS_USER` records that do not yet store Active Directory `objectGUID`;
+- enterprise deprovisioning synchronization, including whether inactive enterprise accounts are detected only at login or by scheduled synchronization;
+- workflow-role assignment ownership and approval;
+- watermarking, completed signature handling, copy controls, offline validity, and print-audit retention;
 - final site identifiers, non-overlapping sequence ranges, and GoldenGate conflict resolution;
+- attachment binary synchronization SLA, monitoring ownership, retention, backup/restore, malware scanning, and recovery when metadata exists before the synchronized binary;
 - data retention, archival, legal hold, and physical-deletion exceptions.
 
 Until confirmed, these items must not be hard-coded as business behavior.

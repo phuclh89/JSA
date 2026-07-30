@@ -27,7 +27,9 @@ export async function createApplication(): Promise<INestApplication> {
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );
-  app.useGlobalFilters(new GlobalExceptionFilter(logger));
+  app.useGlobalFilters(
+    new GlobalExceptionFilter(logger, config.getOrThrow<string>('app.environment')),
+  );
   app.useGlobalInterceptors(new RequestLoggingInterceptor(logger));
   const document = SwaggerModule.createDocument(
     app,
@@ -54,9 +56,25 @@ if (require.main === module) {
         service: 'jsams-api',
         result: 'startup_failed',
         oracleErrorCode: oracleErrorCode(error),
-        message: oracleDiagnosticHint(error),
+        message: startupErrorMessage(error),
+        diagnosticHint: startupDiagnosticHint(error),
       }),
     );
     process.exitCode = 1;
   });
+}
+
+export function startupErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : 'An unknown startup error occurred';
+}
+
+export function startupDiagnosticHint(error: unknown): string {
+  const code = (error as { code?: string }).code;
+  if (code === 'EADDRINUSE')
+    return 'The API port is already in use. Keep the existing API instance, stop it before restarting, or configure a different PORT.';
+  if (code === 'EACCES')
+    return 'The API cannot bind to the configured port. Review operating-system permissions or configure a different PORT.';
+  return oracleDiagnosticHint(error);
 }

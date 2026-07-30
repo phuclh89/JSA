@@ -10,5 +10,9 @@ export interface SecurityRepository {
     username: string,
     allowUsernameFallback: boolean,
   ): Promise<ApplicationUserRecord | undefined>;
-  loadAssignments(context: OracleTransactionContext, userId: string): Promise<SecurityAssignments>;
+  loadAssignments(
+    context: OracleTransactionContext,
+    userId: string,
+    effectiveAt?: Date,
+  ): Promise<SecurityAssignments>;
 }

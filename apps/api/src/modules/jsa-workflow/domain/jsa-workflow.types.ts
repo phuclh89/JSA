@@ -9,7 +9,7 @@ export interface WorkflowTarget {
   siteId: string;
   rigId: string;
   departmentId: string;
-  jobTypeId: string;
+  jobTypeId?: string;
   creatorUserId: string;
   masterStatus: string;
   versionStatus: JsaVersionStatus;

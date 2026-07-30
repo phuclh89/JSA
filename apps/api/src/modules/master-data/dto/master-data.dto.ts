@@ -45,3 +45,11 @@ export class MasterDataMutationDto {
 export class ActiveMutationDto {
   @Matches(idPattern) rowVersion!: string;
 }
+
+export class OrganizationMutationDto {
+  @IsString() @MaxLength(50) @Matches(/^[A-Za-z0-9][A-Za-z0-9_-]*$/) code!: string;
+  @IsString() @MaxLength(200) name!: string;
+  @Matches(idPattern) siteId!: string;
+  @Matches(idPattern) @IsOptional() rigId?: string;
+  @Matches(idPattern) @IsOptional() rowVersion?: string;
+}

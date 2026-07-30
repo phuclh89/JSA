@@ -1,0 +1,560 @@
+.jsa-print-page {
+  min-height: 100vh;
+  padding: 24px;
+  color: #111;
+  background: var(--color-page-surface);
+}
+
+.jsa-print-state {
+  min-height: 100vh;
+  padding: 32px;
+  display: grid;
+  place-content: center;
+  gap: 16px;
+  background: var(--color-page-surface);
+}
+
+.jsa-print-toolbar {
+  max-width: 1400px;
+  margin: 0 auto 16px;
+  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  border-radius: var(--radius-standard);
+  background: var(--color-surface);
+  box-shadow: rgba(14, 15, 12, 0.12) 0 0 0 1px;
+}
+
+.jsa-print-toolbar > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.jsa-print-toolbar span {
+  color: var(--color-strong-neutral);
+  font-size: 0.75rem;
+}
+
+.jsa-print-catalogue-error {
+  max-width: 1400px;
+  margin: 0 auto 16px;
+}
+
+.jsa-print-document {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 12px;
+  color: #111;
+  background: #fff;
+  box-shadow: rgba(14, 15, 12, 0.16) 0 0 0 1px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.jsa-print-document table {
+  width: 100%;
+  border-spacing: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.jsa-print-document th,
+.jsa-print-document td {
+  padding: 4px;
+  border: 1px solid #aeb3b6;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.jsa-print-document th {
+  background: #e8e8e8;
+  font-weight: 700;
+  text-align: center;
+}
+
+.print-brand-row {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: 1.4fr 1.1fr 88px;
+  align-items: stretch;
+  border: 1px solid #aeb3b6;
+}
+
+.print-subject,
+.print-company-name {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.print-subject {
+  background: #fff200;
+}
+
+.print-company-name {
+  font-size: 12px;
+}
+
+.print-brand-row img {
+  width: 88px;
+  height: 62px;
+  padding: 3px;
+  object-fit: contain;
+  box-sizing: border-box;
+}
+
+.print-meta-table th:nth-child(1) {
+  width: 18%;
+}
+
+.print-meta-table th:nth-child(2) {
+  width: 16%;
+}
+
+.print-meta-table th:nth-child(3) {
+  width: 14%;
+}
+
+.print-meta-table th:nth-child(4) {
+  width: 5%;
+}
+
+.print-meta-table th:nth-child(5) {
+  width: 19%;
+}
+
+.print-job-table td:nth-child(1) {
+  width: 34%;
+}
+
+.print-job-table td:nth-child(2) {
+  width: 25%;
+}
+
+.print-job-table td:nth-child(3) {
+  width: 21%;
+}
+
+.print-version-identity {
+  padding: 3px 5px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #333;
+  border: 1px solid #aeb3b6;
+  border-top: 0;
+  font-size: 7.5px;
+}
+
+.print-section {
+  margin-top: 10px;
+}
+
+.print-section > h2 {
+  min-height: 22px;
+  margin: 0;
+  padding: 4px 8px;
+  color: #fff;
+  background: #1477a8;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.print-section > h2 small {
+  margin-left: 4px;
+  font-size: 8px;
+  font-weight: 400;
+}
+
+.print-prompts > h2 {
+  color: #111;
+  border: 1px solid #aeb3b6;
+  background: #fff;
+}
+
+.print-prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid #aeb3b6;
+  border-left: 1px solid #aeb3b6;
+}
+
+.print-prompt-item {
+  min-height: 24px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  border-right: 1px solid #aeb3b6;
+  border-bottom: 1px solid #aeb3b6;
+}
+
+.print-prompt-item strong {
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  border-right: 1px solid #aeb3b6;
+  text-align: center;
+}
+
+.print-prompt-item span {
+  min-width: 0;
+  padding: 3px 5px;
+  align-self: center;
+}
+
+.print-inline-status {
+  padding: 12px;
+  border: 1px solid #aeb3b6;
+}
+
+.print-matrix-band {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(440px, 1.7fr) minmax(280px, 1fr);
+  gap: 7px;
+  break-inside: avoid;
+}
+
+.print-matrix-references {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.print-axis-table {
+  font-size: 7px;
+}
+
+.print-axis-table caption {
+  caption-side: top;
+  padding: 2px;
+  border: 1px solid #777;
+  border-bottom: 0;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.print-axis-table th,
+.print-axis-table td {
+  padding: 2px;
+  border-color: #777;
+}
+
+.print-axis-table td:first-child {
+  width: 45%;
+  text-align: center;
+}
+
+.print-axis-table td strong,
+.print-axis-table td small {
+  display: block;
+}
+
+.print-matrix-chart {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-rows: 20px minmax(0, 1fr);
+}
+
+.print-matrix-severity-title,
+.print-matrix-probability-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #777;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.print-matrix-severity-title {
+  grid-column: 2;
+  grid-row: 1;
+  border-bottom: 0;
+}
+
+.print-matrix-probability-title {
+  grid-column: 1;
+  grid-row: 2;
+  border-right: 0;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.print-matrix-grid {
+  min-width: 0;
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  border-top: 1px solid #777;
+  border-left: 1px solid #777;
+}
+
+.print-matrix-row {
+  display: contents;
+}
+
+.print-matrix-axis,
+.print-matrix-cell {
+  min-width: 0;
+  min-height: 28px;
+  padding: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid #777;
+  border-bottom: 1px solid #777;
+  text-align: center;
+}
+
+.print-matrix-axis small {
+  font-size: 6px;
+}
+
+.print-matrix-cell {
+  font-size: 8px;
+}
+
+.print-risk-overview {
+  border: 1px solid #777;
+  background: #767676;
+}
+
+.print-risk-overview h3 {
+  margin: 0;
+  padding: 3px 6px;
+  color: #111;
+  border-bottom: 1px solid #555;
+  background: #dedede;
+  font-size: 8px;
+}
+
+.print-risk-overview-item {
+  min-height: 30px;
+  padding: 4px 6px;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 5px;
+  color: #fff;
+  border-bottom: 1px solid #555;
+  font-size: 7px;
+}
+
+.print-risk-overview-item:last-child {
+  border-bottom: 0;
+}
+
+.print-task-table {
+  font-size: 7.5px;
+}
+
+.print-task-col-number {
+  width: 3%;
+}
+
+.print-task-col-task {
+  width: 14%;
+}
+
+.print-task-col-hazard {
+  width: 19%;
+}
+
+.print-task-col-control {
+  width: 36%;
+}
+
+.print-task-col-risk {
+  width: 4.66%;
+}
+
+.print-task-table td {
+  min-height: 30px;
+  white-space: pre-line;
+}
+
+.print-risk-code,
+.print-risk-rating {
+  text-align: center;
+  vertical-align: middle !important;
+}
+
+.print-risk-rating {
+  font-weight: 800;
+}
+
+.print-basic-step-table th {
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.print-basic-step-table th:nth-child(1) {
+  width: 23%;
+}
+
+.print-basic-step-table th:nth-child(2),
+.print-basic-step-table th:nth-child(3) {
+  width: 21%;
+}
+
+.print-personal-section,
+.print-debrief {
+  break-inside: avoid-page;
+}
+
+.print-personal-tables {
+  padding-top: 5px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.print-personal-tables th {
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.print-personal-tables td {
+  height: 24px;
+}
+
+.print-personal-section > p {
+  margin: 8px 0 0;
+}
+
+.print-debrief > table > thead th {
+  height: 30px;
+  font-size: 12px;
+}
+
+.print-debrief > table > thead th:first-child {
+  width: 12%;
+}
+
+.print-debrief > table > tbody > tr > th {
+  padding: 10px;
+  font-size: 11px;
+  text-align: left;
+}
+
+.print-debrief > table > tbody > tr > td {
+  height: 120px;
+  padding: 10px;
+  font-size: 10px;
+}
+
+.print-blank-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.print-blank-checklist span {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.print-blank-checklist i {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border: 1px solid #333;
+}
+
+.print-blank-checklist b {
+  height: 14px;
+  display: block;
+  border-bottom: 1px solid #aaa;
+}
+
+.print-document-trace {
+  margin-top: 8px;
+  padding-top: 5px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid #777;
+  font-size: 6.5px;
+}
+
+@media (max-width: 900px) {
+  .jsa-print-page {
+    padding: 12px;
+  }
+
+  .jsa-print-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .jsa-print-document {
+    min-width: 1100px;
+  }
+
+  .jsa-print-page {
+    overflow-x: auto;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 7mm;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .jsa-print-page {
+    min-height: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  .jsa-print-toolbar {
+    display: none !important;
+  }
+
+  .jsa-print-document {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .print-brand-row,
+  .print-prompts,
+  .print-matrix-band,
+  .print-basic-step-table,
+  .print-personal-section,
+  .print-debrief {
+    break-inside: avoid-page;
+  }
+
+  .print-task-table thead {
+    display: table-header-group;
+  }
+
+  .print-task-table tr,
+  .print-basic-step-table tr,
+  .print-personal-tables tr {
+    break-inside: avoid;
+  }
+}

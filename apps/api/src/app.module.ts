@@ -5,6 +5,7 @@ import appConfig from './config/app.config';
 import authConfig from './config/auth.config';
 import loggingConfig from './config/logging.config';
 import oracleConfig from './config/oracle.config';
+import attachmentConfig from './config/attachment.config';
 import { validateEnvironment } from './config/environment';
 import { CorrelationIdMiddleware } from './common/interceptors/correlation-id.middleware';
 import { LoggingModule } from './common/logging/logging.module';
@@ -16,6 +17,8 @@ import { MasterDataModule } from './modules/master-data/master-data.module';
 import { RiskMatrixModule } from './modules/risk-matrix/risk-matrix.module';
 import { JsaDraftModule } from './modules/jsa-draft/jsa-draft.module';
 import { JsaWorkflowModule } from './modules/jsa-workflow/jsa-workflow.module';
+import { AccessAdministrationModule } from './modules/access-administration/access-administration.module';
+import { AttachmentLibraryModule } from './modules/attachment-library/attachment-library.module';
 
 @Module({
   imports: [
@@ -24,7 +27,7 @@ import { JsaWorkflowModule } from './modules/jsa-workflow/jsa-workflow.module';
       cache: true,
       envFilePath: path.resolve(__dirname, '../../../.env'),
       validate: validateEnvironment,
-      load: [appConfig, authConfig, loggingConfig, oracleConfig],
+      load: [appConfig, authConfig, loggingConfig, oracleConfig, attachmentConfig],
     }),
     LoggingModule,
     OracleModule,
@@ -33,6 +36,8 @@ import { JsaWorkflowModule } from './modules/jsa-workflow/jsa-workflow.module';
     RiskMatrixModule,
     JsaDraftModule,
     JsaWorkflowModule,
+    AccessAdministrationModule,
+    AttachmentLibraryModule,
     HealthModule,
     SystemModule,
   ],

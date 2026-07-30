@@ -4,6 +4,23 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi } from 'vitest';
 import { WorkflowQueuePage } from './workflow-queue-page';
 import { WorkflowReviewPage } from './workflow-review-page';
+vi.mock('./jsa-draft-editor', () => ({
+  JsaDraftEditor: ({
+    embedded,
+    forceReadOnly,
+  }: {
+    embedded?: boolean;
+    forceReadOnly?: boolean;
+  }) => (
+    <div
+      aria-label="Complete JSA worksheet"
+      data-embedded={String(embedded)}
+      data-read-only={String(forceReadOnly)}
+    >
+      Embedded JSA worksheet
+    </div>
+  ),
+}));
 vi.mock('./workflow-api', () => ({
   workflowApi: {
     queue: vi.fn(async () => [
@@ -47,6 +64,42 @@ vi.mock('./workflow-api', () => ({
         },
       ],
     })),
+    preview: vi.fn(async () => ({
+      configured: true,
+      steps: [
+        {
+          stepId: '11',
+          stepOrder: 1,
+          stepCode: 'DEPARTMENT_HEAD',
+          stepName: 'Department Head',
+          versionStatus: 'DEPARTMENT_HEAD_REVIEW',
+          workflowRoleCode: 'DEPARTMENT_HEAD',
+          assigneeUserId: '8',
+          assigneeName: 'Department Head User',
+        },
+        {
+          stepId: '12',
+          stepOrder: 2,
+          stepCode: 'STC',
+          stepName: 'STC',
+          versionStatus: 'STC_REVIEW',
+          workflowRoleCode: 'STC',
+          assigneeUserId: '9',
+          assigneeName: 'STC User',
+        },
+        {
+          stepId: '13',
+          stepOrder: 3,
+          stepCode: 'OIM',
+          stepName: 'OIM',
+          versionStatus: 'OIM_REVIEW',
+          workflowRoleCode: 'OIM',
+          assigneeUserId: '10',
+          assigneeName: 'OIM User',
+        },
+      ],
+      errors: [],
+    })),
     action: vi.fn(),
   },
 }));
@@ -73,7 +126,18 @@ describe('Phase 4 workflow pages', () => {
       '/jsa/10/workflow',
     );
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
-    expect(screen.getByText(/SUBMIT/)).toBeInTheDocument();
-    expect(screen.getByText('Open read-only JSA')).toBeInTheDocument();
+    expect(screen.getByLabelText('Approval history')).toHaveTextContent('Submit');
+    expect(screen.queryByText('Open read-only JSA')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Complete JSA worksheet')).toHaveAttribute(
+      'data-embedded',
+      'true',
+    );
+    expect(screen.getByLabelText('Complete JSA worksheet')).toHaveAttribute(
+      'data-read-only',
+      'true',
+    );
+    expect(screen.getByLabelText('JSA approval status')).toBeInTheDocument();
+    expect(screen.getAllByText('Department Head').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('STC').length).toBeGreaterThan(0);
   });
 });

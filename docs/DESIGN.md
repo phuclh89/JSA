@@ -18,7 +18,7 @@ The JSAMS visual direction uses a warm off-white canvas, near-black text, a cont
 
 ### Core characteristics
 
-- Near black (`#0e0f0c`) for primary text and selected dark surfaces.
+- Near black (`#0e0f0c`) for primary text. The application header uses a white surface, while strong section-bar surfaces use warm dark gray (`#454745`) rather than black.
 - Lime accent (`#9fe870`) with dark green (`#163300`) text for primary positive calls to action.
 - Inter as the practical default UI font.
 - Rounded controls and containers, restrained according to information density.
@@ -57,7 +57,7 @@ The centralized token system must cover:
 | Dark green       | `#163300`                 | Text on lime, links, and deep green emphasis         |
 | Light mint       | `#e2f6d5`                 | Selected navigation, soft positive or accent surface |
 | Pastel green     | `#cdffad`                 | Controlled interactive contrast hover                |
-| Warm dark        | `#454745`                 | Secondary text and strong neutral details            |
+| Warm dark        | `#454745`                 | Section bars and strong neutral details              |
 | Gray             | `#868685`                 | Muted text when contrast remains sufficient          |
 | Light surface    | `#e8ebe6`                 | Subtle green-tinted surface                          |
 | Page surface     | `#f5f7f3`                 | Warm off-white application background                |
@@ -151,7 +151,7 @@ A `scale(1.05)` hover and `scale(0.95)` active treatment may be used for spaciou
 
 ### Application shell
 
-- Preserve JSAMS or approved PV Drilling branding; never use a Wise logo or wordmark.
+- Preserve JSAMS and the approved PV Drilling logo asset; never use a Wise logo or wordmark. The shell and authentication screen use the approved repository asset `apps/web/src/assets/pv-drilling-logo.png`. The shell header uses a white background so the approved logo remains visually clean without a contrasting tile effect.
 - Maintain Browse/Operations areas, desktop sidebar, mobile drawer, action ribbon/toolbars, central content, and session information where applicable.
 - Navigation state, current area, environment indication, and user context must remain distinguishable.
 - Permission-aware visibility improves navigation but never replaces backend enforcement.

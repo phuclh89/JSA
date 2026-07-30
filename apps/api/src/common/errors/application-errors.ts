@@ -15,6 +15,24 @@ export class UnauthenticatedError extends ApplicationError {
     super('UNAUTHENTICATED', 'Authentication is required', HttpStatus.UNAUTHORIZED);
   }
 }
+export class InvalidEnterpriseCredentialsError extends ApplicationError {
+  constructor() {
+    super(
+      'INVALID_ENTERPRISE_CREDENTIALS',
+      'The username or password is incorrect',
+      HttpStatus.UNAUTHORIZED,
+    );
+  }
+}
+export class EnterpriseAuthenticationUnavailableError extends ApplicationError {
+  constructor() {
+    super(
+      'ENTERPRISE_AUTHENTICATION_UNAVAILABLE',
+      'Enterprise authentication is temporarily unavailable',
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+}
 export class AccessDeniedError extends ApplicationError {
   constructor() {
     super('ACCESS_DENIED', 'Access is denied', HttpStatus.FORBIDDEN);
@@ -33,6 +51,25 @@ export class ApplicationUserNotRegisteredError extends ApplicationError {
 export class ApplicationUserInactiveError extends ApplicationError {
   constructor() {
     super('APPLICATION_USER_INACTIVE', 'Application access is inactive', HttpStatus.FORBIDDEN);
+  }
+}
+export class ConflictingIdentityMappingError extends ApplicationError {
+  constructor() {
+    super(
+      'CONFLICTING_IDENTITY_MAPPING',
+      'The enterprise identity mapping conflicts with another application user',
+      HttpStatus.FORBIDDEN,
+    );
+  }
+}
+export class PendingWorkflowImpactError extends ApplicationError {
+  constructor(details: unknown[]) {
+    super(
+      'PENDING_WORKFLOW_IMPACT',
+      'The change would leave one or more pending workflow tasks without an authorized assignee',
+      HttpStatus.CONFLICT,
+      details,
+    );
   }
 }
 export class DataScopeDeniedError extends ApplicationError {

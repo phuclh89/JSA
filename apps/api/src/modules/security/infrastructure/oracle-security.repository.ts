@@ -5,6 +5,7 @@ import type { OracleTransactionContext } from '../../../common/oracle/oracle.typ
 import { assertOracleId } from '../../../common/oracle/oracle-id';
 import type { SecurityRepository } from '../domain/security.repository';
 import type { ApplicationUserRecord, SecurityAssignments } from '../domain/security.types';
+import { ConflictingIdentityMappingError } from '../../../common/errors/application-errors';
 
 interface UserRow {
   USER_ID: string;
@@ -52,11 +53,14 @@ export class OracleSecurityRepository implements SecurityRepository {
        WHERE UPPER(ENTERPRISE_IDENTITY_KEY) = UPPER(:identityKey)
           OR (:allowUsernameFallback = 'Y' AND UPPER(USERNAME) = UPPER(:username))
        ORDER BY CASE WHEN UPPER(ENTERPRISE_IDENTITY_KEY) = UPPER(:identityKey) THEN 0 ELSE 1 END
-       FETCH FIRST 1 ROW ONLY`,
+       FETCH FIRST 2 ROWS ONLY`,
       { identityKey, username, allowUsernameFallback: allowUsernameFallback ? 'Y' : 'N' },
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
-    const row = result.rows?.[0];
+    const matches = result.rows ?? [];
+    if (new Set(matches.map((item) => item.USER_ID)).size > 1)
+      throw new ConflictingIdentityMappingError();
+    const row = matches[0];
     if (!row) return undefined;
     return {
       userId: row.USER_ID,
@@ -74,9 +78,11 @@ export class OracleSecurityRepository implements SecurityRepository {
   async loadAssignments(
     { connection }: OracleTransactionContext,
     userId: string,
+    effectiveAt?: Date,
   ): Promise<SecurityAssignments> {
     assertOracleId(userId, 'userId');
     const options = { outFormat: oracledb.OUT_FORMAT_OBJECT } as const;
+    const effectiveDate = effectiveAt ?? new Date();
     const roles = await connection.execute<CodeRow>(
       `SELECT DISTINCT R.ROLE_CODE AS CODE_VALUE
        FROM SYS_USER_ROLE UR JOIN SYS_ROLE R ON R.ROLE_ID = UR.ROLE_ID
@@ -99,9 +105,9 @@ export class OracleSecurityRepository implements SecurityRepository {
        FROM SYS_USER_PERMISSION_OVERRIDE O
        JOIN SYS_PERMISSION P ON P.PERMISSION_ID = O.PERMISSION_ID AND P.IS_ACTIVE = 'Y'
        WHERE O.USER_ID = :userId AND O.IS_ACTIVE = 'Y'
-         AND O.EFFECTIVE_FROM <= SYSTIMESTAMP
-         AND (O.EFFECTIVE_TO IS NULL OR O.EFFECTIVE_TO >= SYSTIMESTAMP)`,
-      { userId },
+         AND O.EFFECTIVE_FROM <= :effectiveAt
+         AND (O.EFFECTIVE_TO IS NULL OR O.EFFECTIVE_TO >= :effectiveAt)`,
+      { userId, effectiveAt: effectiveDate },
       options,
     );
     const scopes = await connection.execute<ScopeRow>(
@@ -114,12 +120,12 @@ export class OracleSecurityRepository implements SecurityRepository {
        LEFT JOIN SYS_DEPARTMENT D ON D.DEPARTMENT_ID = S.DEPARTMENT_ID
          AND D.SITE_ID = S.SITE_ID AND D.IS_ACTIVE = 'Y'
        WHERE S.USER_ID = :userId AND S.IS_ACTIVE = 'Y'
-         AND S.EFFECTIVE_FROM <= SYSTIMESTAMP
-         AND (S.EFFECTIVE_TO IS NULL OR S.EFFECTIVE_TO >= SYSTIMESTAMP)
+         AND S.EFFECTIVE_FROM <= :effectiveAt
+         AND (S.EFFECTIVE_TO IS NULL OR S.EFFECTIVE_TO >= :effectiveAt)
          AND (S.RIG_ID IS NULL OR R.RIG_ID IS NOT NULL)
          AND (S.DEPARTMENT_ID IS NULL OR D.DEPARTMENT_ID IS NOT NULL)
          AND (S.DEPARTMENT_ID IS NULL OR (D.RIG_ID IS NULL AND S.RIG_ID IS NULL) OR D.RIG_ID = S.RIG_ID)`,
-      { userId },
+      { userId, effectiveAt: effectiveDate },
       options,
     );
     return {

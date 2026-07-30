@@ -32,8 +32,19 @@ export class ApiClient {
     return this.request<T>(path, { method: 'POST', body: JSON.stringify(body) });
   }
 
+  async postEmpty<T>(path: string): Promise<T> {
+    return this.request<T>(path, { method: 'POST' });
+  }
+
+  async postForm<T>(path: string, body: FormData): Promise<T> {
+    return this.request<T>(path, { method: 'POST', body });
+  }
+
   async put<T, B = unknown>(path: string, body: B): Promise<T> {
     return this.request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
+  }
+  async patch<T, B = unknown>(path: string, body: B): Promise<T> {
+    return this.request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
   }
 
   private async request<T>(
@@ -48,7 +59,9 @@ export class ApiClient {
       credentials: 'include',
       headers: {
         Accept: 'application/json',
-        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.body && !(init.body instanceof FormData)
+          ? { 'Content-Type': 'application/json' }
+          : {}),
         'X-Correlation-ID': correlationId,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(import.meta.env.VITE_AUTH_MODE === 'development'
@@ -67,6 +80,7 @@ export class ApiClient {
         payload?.error?.details ?? [],
       );
     }
+    if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
   }
 }

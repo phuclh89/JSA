@@ -14,6 +14,7 @@ import { MasterDataService } from '../../master-data/application/master-data.ser
 import type { MasterDataKind } from '@jsams/shared-types';
 import type {
   CreateDraftInput,
+  SaveDraftInput,
   SaveDraftContentInput,
   UpdateDraftHeaderInput,
 } from '../domain/jsa-draft.types';
@@ -94,6 +95,7 @@ export class JsaDraftService {
         context,
         input,
         refs.matrixVersionId,
+        refs.languageId,
         number,
         user.userId,
         user.username,
@@ -110,6 +112,10 @@ export class JsaDraftService {
       nextState: { status: 'DRAFT' },
     });
     return this.detail(id, user);
+  }
+  myDrafts(user: AuthenticatedUser) {
+    this.capabilities.require(user, 'view');
+    return this.oracle.withTransaction((context) => this.repository.listMine(context, user.userId));
   }
   async detail(id: string, user: AuthenticatedUser): Promise<JsaDraftDetail> {
     this.capabilities.require(user, 'view');
@@ -133,6 +139,12 @@ export class JsaDraftService {
         this.capabilities.capabilities(user).edit,
     };
   }
+  async printDetail(id: string, user: AuthenticatedUser): Promise<JsaDraftDetail> {
+    const detail = await this.detail(id, user);
+    if (detail.lifecycleStatus !== 'PUBLISHED' || detail.versionStatus !== 'PUBLISHED')
+      throw new StateConflictError('Only the current Published JSA Version can be printed');
+    return { ...detail, editable: false };
+  }
   async updateHeader(id: string, input: UpdateDraftHeaderInput, user: AuthenticatedUser) {
     this.capabilities.require(user, 'edit');
     await this.oracle.withTransaction(async (context) => {
@@ -150,15 +162,51 @@ export class JsaDraftService {
   }
   async saveContent(id: string, input: SaveDraftContentInput, user: AuthenticatedUser) {
     this.capabilities.require(user, 'edit');
-    this.validation.structural(input);
+    const content = { ...input, coverage: [], procedureReferences: [] };
+    this.validation.structural(content);
     await this.oracle.withTransaction(async (context) => {
       const access = await this.requireEditable(context, id, user);
-      await this.repository.saveContent(context, access, input, user.username);
+      await this.repository.saveContent(context, access, content, user.username);
     });
     await this.audit.recordRequired({
       actorUserId: user.userId,
       enterpriseUsername: user.username,
       actionCode: 'JSA_DRAFT_CONTENT_SAVED',
+      targetType: 'JSA_MASTER',
+      targetId: id,
+    });
+    return this.detail(id, user);
+  }
+  async saveDraft(id: string, input: SaveDraftInput, user: AuthenticatedUser) {
+    this.capabilities.require(user, 'edit');
+    const content: SaveDraftContentInput = {
+      versionRowVersion: (BigInt(input.versionRowVersion) + 1n).toString(),
+      prompts: input.prompts,
+      tasks: input.tasks,
+      coverage: [],
+      basicSteps: input.basicSteps,
+      procedureReferences: [],
+      attachments: input.attachments,
+    };
+    this.validation.structural(content);
+    await this.oracle.withTransaction(async (context) => {
+      const access = await this.requireEditable(context, id, user);
+      await this.repository.updateHeader(
+        context,
+        access,
+        {
+          rowVersion: input.rowVersion,
+          versionRowVersion: input.versionRowVersion,
+          jobTitle: input.jobTitle,
+        },
+        user.username,
+      );
+      await this.repository.saveContent(context, access, content, user.username);
+    });
+    await this.audit.recordRequired({
+      actorUserId: user.userId,
+      enterpriseUsername: user.username,
+      actionCode: 'JSA_DRAFT_SAVED',
       targetType: 'JSA_MASTER',
       targetId: id,
     });
