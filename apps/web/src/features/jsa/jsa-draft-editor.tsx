@@ -71,11 +71,16 @@ type PickerKind = 'performers' | 'supervisors' | 'tools';
 export function JsaDraftEditor({
   embedded = false,
   forceReadOnly = false,
+  draftId,
+  onExit,
 }: {
   embedded?: boolean;
   forceReadOnly?: boolean;
+  draftId?: string;
+  onExit?: () => void;
 } = {}) {
-  const { id = '' } = useParams();
+  const { id: routeId = '' } = useParams();
+  const id = draftId ?? routeId;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ['jsa-draft', id], queryFn: () => jsaApi.detail(id) });
@@ -156,7 +161,12 @@ export function JsaDraftEditor({
         rowVersion: draft!.rowVersion,
         versionRowVersion: draft!.versionRowVersion,
       }),
-    onSuccess: () => navigate('/jsa/drafts'),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['jsa-navigation-counts'] });
+      void queryClient.invalidateQueries({ queryKey: ['jsa-drafts'] });
+      if (onExit) onExit();
+      else navigate('/jsa/drafts');
+    },
     onError: (error) => message.error((error as ApiClientError).message),
   });
   const submit = useMutation({
@@ -164,8 +174,10 @@ export function JsaDraftEditor({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['jsa-draft', id] });
       void queryClient.invalidateQueries({ queryKey: ['workflow-queue'] });
+      void queryClient.invalidateQueries({ queryKey: ['jsa-navigation-counts'] });
       message.success('JSA submitted for approval');
-      navigate(`/jsa/${id}/workflow`);
+      if (onExit) onExit();
+      else navigate(`/jsa/${id}/workflow`);
     },
     onError: (error) => message.error((error as ApiClientError).message),
   });
@@ -365,7 +377,7 @@ export function JsaDraftEditor({
           </span>
         </div>
         <Space wrap>
-          <Button onClick={() => navigate('/jsa/drafts')}>Exit</Button>
+          <Button onClick={() => (onExit ? onExit() : navigate('/jsa/drafts'))}>Exit</Button>
           {!disabled ? (
             <>
               <Button

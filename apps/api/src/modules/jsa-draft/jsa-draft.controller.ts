@@ -34,8 +34,11 @@ export class JsaDraftController {
   ) {
     return this.service.effectiveMatrix(rigId, user);
   }
-  @Get('mine') myDrafts(@CurrentUser() user: AuthenticatedUser) {
-    return this.service.myDrafts(user);
+  @Get('mine') myDrafts(
+    @Query('rigId') rigId: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.myDrafts(user, rigId);
   }
   @Post() create(@Body() body: CreateJsaDraftDto, @CurrentUser() user: AuthenticatedUser) {
     return this.service.create(body, user);

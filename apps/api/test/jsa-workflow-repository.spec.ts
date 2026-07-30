@@ -8,12 +8,12 @@ describe('OracleJsaWorkflowRepository official numbering', () => {
         return { rows: [{ ID: String(sequence++) }] };
       if (sql.includes('SELECT JSA_NUMBER,NUMBER_STATUS'))
         return { rows: [{ JSA_NUMBER: 'TMP-10', NUMBER_STATUS: 'TEMPORARY' }] };
-      if (sql.includes('SELECT R.RIG_CODE,D.DEPARTMENT_CODE'))
-        return { rows: [{ RIG_CODE: 'PVV', DEPARTMENT_CODE: 'DRILL' }] };
+      if (sql.includes('SELECT R.RIG_NAME,D.DEPARTMENT_CODE'))
+        return { rows: [{ RIG_NAME: 'PV DRILLING V', DEPARTMENT_CODE: 'DR' }] };
       if (sql.includes('SELECT LAST_NUMBER')) return { rows: [{ LAST_NUMBER: 41 }] };
       if (sql.includes("NUMBER_STATUS='OFFICIAL'")) {
         expect(binds).toMatchObject({
-          officialNumber: 'PVV-DRILL-0042',
+          officialNumber: 'PV DRILLING V-DR-0042',
           siteId: '1',
           jsaId: '10',
         });
@@ -63,11 +63,11 @@ describe('OracleJsaWorkflowRepository official numbering', () => {
     );
     expect(execute).toHaveBeenCalledWith(
       expect.stringContaining("NUMBER_STATUS='OFFICIAL'"),
-      expect.objectContaining({ officialNumber: 'PVV-DRILL-0042' }),
+      expect.objectContaining({ officialNumber: 'PV DRILLING V-DR-0042' }),
     );
     expect(execute).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO SYS_NOTIFICATION'),
-      expect.objectContaining({ subject: 'JSA published: PVV-DRILL-0042' }),
+      expect.objectContaining({ subject: 'JSA published: PV DRILLING V-DR-0042' }),
     );
   });
 });

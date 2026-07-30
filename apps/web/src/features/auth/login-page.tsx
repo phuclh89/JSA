@@ -21,13 +21,13 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [form] = Form.useForm<LoginValues>();
 
-  if (auth.status === 'authenticated') return <Navigate to="/browse" replace />;
+  if (auth.status === 'authenticated') return <Navigate to="/jsa/drafts" replace />;
 
   const submit = async (values: LoginValues) => {
     try {
       await auth.login(values.username, values.password);
       form.setFieldValue('password', '');
-      navigate('/browse', { replace: true });
+      navigate('/jsa/drafts', { replace: true });
     } catch (error) {
       form.setFieldValue('password', '');
       if (error instanceof ApiClientError && error.status === 401) {

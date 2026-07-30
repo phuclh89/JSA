@@ -1,13 +1,5 @@
 import { Alert, Typography } from 'antd';
 
-export function BrowseHomePage() {
-  return (
-    <>
-      <Typography.Title level={2}>Browse</Typography.Title>
-      <Typography.Paragraph>Choose an available area from the navigation.</Typography.Paragraph>
-    </>
-  );
-}
 export function SecurityFoundationPage() {
   return (
     <>

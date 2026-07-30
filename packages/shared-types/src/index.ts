@@ -519,10 +519,25 @@ export interface WorkflowQueueItem {
   jsaId: string;
   jsaNumber: string;
   jobTitle?: string;
+  ownerSiteCode: string;
+  ownerSiteName: string;
+  rigCode: string;
+  rigName: string;
+  departmentCode: string;
+  departmentName: string;
   versionStatus: JsaVersionStatus;
   currentStepName?: string;
   assignedAt?: string;
+  publishedAt?: string;
+  publishedByUsername?: string;
   updatedAt: string;
+}
+export interface WorkflowNavigationCounts {
+  drafts: number;
+  approvals: number;
+  pending: number;
+  rejected: number;
+  published: number;
 }
 export interface WorkflowDefinitionSummary {
   id: string;

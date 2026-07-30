@@ -87,7 +87,7 @@ JSA Version
 - Each prompt is a simple independent checkbox selection.
 - A selected prompt does not require a mapping to a Task Hazard or Control.
 - Prompt coverage mapping is not collected and does not block save or submission.
-- The confirmed PV Drilling rig checklist contains: Hard hat; Disposable coverall; Use of ladder; MSDS; Well control procedures agreed; Gloves (heat resistant/other); Safety goggles; Fall protection/ Safety Harness; Gas test; Third party involved; Impact Glove; Safety shields; Signs/barriers; Rescue plan required; Fire-fighting equipment; Safety boots/shoe (rubber); Hearing protection; Environment Hazards Reviewed; Simultaneous operations (SIMOPS); Isolations required; Safety glasses; Dust mask; Weather reports discussed; Communication (Radio/Banksman); and Lifejacket/Work Vest.
+- The confirmed PV Drilling checklist shared by every Rig contains: Hard hat; Disposable coverall; Use of ladder; MSDS; Well control procedures agreed; Gloves (heat resistant/other); Safety goggles; Fall protection/ Safety Harness; Gas test; Third party involved; Impact Glove; Safety shields; Signs/barriers; Rescue plan required; Fire-fighting equipment; Safety boots/shoe (rubber); Hearing protection; Environment Hazards Reviewed; Simultaneous operations (SIMOPS); Isolations required; Safety glasses; Dust mask; Weather reports discussed; Communication (Radio/Banksman); and Lifejacket/Work Vest.
 
 ## 6. Initial and Residual Risk
 
@@ -129,6 +129,10 @@ Each Basic Job Step supports:
 
 These are separate many-to-many business associations. A Position may appear as a performer on one step and a supervisor on another. A Tool may be used by multiple steps. The associations belong to the JSA Version and must preserve step ordering and role meaning.
 
+The confirmed Position catalogue is shared by every Site and Rig at Global scope: OIM; Senior Toolpusher; Night Toolpusher; Day Toolpusher; Driller; Pumpman; Derrickman; Floorman; Roustabout; Crane Operator; Assistant Crane Operator; Deck Pusher; AB Seaman; Electrician; Mechanic; Chief Electrician; Chief Mechanic; ET; Barge Captain; Assistant Barge Captain; Motorman; STC; Medic; Campboss; Chief Cook; BCO; Scaffolder; Painter; Welder; Third Party; Asst. Driller; HLO; Radio Operator; Store Man; and Material Coordinator.
+
+The confirmed Tool catalogue is likewise shared by every Site and Rig at Global scope under the governed `JSA Tools` category. It contains the 53 safety equipment, protective equipment, communication items, rescue equipment, lifting equipment, hand tools, and work-support selections confirmed for JSA Basic Job Steps.
+
 Submission requires all of the following:
 
 - The JSA Version has at least one active Basic Job Step.
@@ -159,8 +163,12 @@ Submission requires all of the following:
 - The confirmed PV Drilling 5x5 Probability definitions are `1 — Very low / Rare`, `2 — Low / Unlikely`, `3 — Possible / Moderate`, `4 — Hight Likely`, and `5 — Almost Certain`.
 - The confirmed PV Drilling 5x5 Severity definitions are `A — Slight`, `B — Minor`, `C — Moderate`, `D — Major`, and `E — Catastrophic`.
 - Its four governed Risk Colour zones are Dark Green, Light Green, Yellow, and Red. Dark Green and Light Green require continuous improvement, Yellow requires risk reduction to ALARP, and Red requires additional controls, blocks Residual Risk acceptance, and requires Onshore Management consultation if the risk remains Red.
+- The confirmed PV Drilling 3x3 Likelihood definitions are `1 — LOW — Remote`, `2 — MED — Possible`, and `3 — HIGH — Probable`.
+- Its Severity definitions are `1 — LOW` (`No injury`, `No damage`, `No pollution`), `2 — MED` (`First aid injury`, `Minor damage`, `Minor pollution`), and `3 — HIGH` (`Lost time injury`, `Major damage`, `Major pollution`).
+- Its cell ratings are the Likelihood/Severity products: row 1 is `1, 2, 3`; row 2 is `2, 4, 6`; and row 3 is `3, 6, 9`. Ratings `1` and `2` are white/Acceptable, rating `3` is yellow/Tolerable, and ratings `4`, `6`, and `9` are red/Unacceptable. Unacceptable is prohibited as Residual Risk.
+- The confirmed 3x3 configuration is governed as a separate Matrix Version based on Procedure Reference `P1.04.09`; creating it does not by itself replace a Rig's effective Matrix assignment.
+- The effective assignment rule is: `PV DRILLING V` uses the confirmed 5x5 Matrix; `PV DRILLING I`, `PV DRILLING II`, `PV DRILLING III`, `PV DRILLING VI`, `PV DRILLING VIII`, `PV DRILLING IX`, `PV DRILLING X`, and `Shorebase` use the confirmed 3x3 Matrix.
 - The applied matrix/version must be snapshotted or otherwise historically resolvable for Published versions.
-- Exact 3x3 definitions and governance for future Matrix-definition changes remain open business decisions.
 
 ## 11. Create and approval workflow
 
@@ -230,8 +238,15 @@ No Return, Reject, Cancel, Supersede, or Retire action may erase approval histor
 ## 15. Multi-site ownership and cross-rig copy
 
 - Every operational JSA Master and version has explicit site ownership and rig context.
+- The confirmed organizational hierarchy has two Sites: **Offshore** and **Onshore**.
+- Offshore contains `PV DRILLING I`, `PV DRILLING II`, `PV DRILLING III`, `PV DRILLING V`, `PV DRILLING VI`, `PV DRILLING VIII`, `PV DRILLING IX`, and `PV DRILLING X`.
+- Onshore contains the single Rig `Shorebase`.
+- Every confirmed Rig has the same Department catalogue and governed code mapping: `3P — Third Party`, `DR — Drilling`, `EL — Electrician`, `ET — Electronics`, `ME — Mechanic`, `MAR — Marine`, `MED — Medic`, `WE — Welder`, `CAT — Catering`, and `STC — STC`.
+- Department identity is Rig-scoped. The same governed Department code may be reused on different Rigs, while duplicate codes within one Rig are prohibited.
 - The owning site is the authority for changes to its records.
 - Users may act only within both their permission set and assigned data scope.
+- The JSA workspace has one user-selected Working Rig context. A specific Rig selection filters My Drafts, approval queues, Published JSA, and their navigation counts and becomes the default locked Rig when creating a JSA. `All governed rigs` is available to users whose work spans multiple Rigs.
+- Working Rig is a navigation context, not authorization. It can only select active Rigs already visible within the user's effective data scope, and the backend continues to enforce permission and Site/Rig/Department scope on every request. Administration screens remain explicitly scoped and are not silently restricted by the JSA Working Rig.
 - Cross-rig copy creates a new destination-owned JSA; it must not create shared mutable content across rigs.
 - A copy receives new local identities while retaining source-site, source-rig, source-JSA, and source-version provenance.
 - The destination copy uses the destination rig's governed Risk Matrix and resolves destination-scoped Positions and Tools.
@@ -247,11 +262,11 @@ No Return, Reject, Cancel, Supersede, or Retire action may erase approval histor
 - Every replicated business table has an explicit primary key.
 - Business identifiers use Oracle sequences; `MAX(ID) + 1` is forbidden.
 - Draft and in-approval JSAs use only a Temporary JSA Number.
-- Initial publication assigns the Official JSA Number in the format **`<Rig code>-<Department code>-NNNN`**.
+- Initial publication assigns the Official JSA Number in the format **`<Rig name>-<Department code>-NNNN`**. The Rig segment uses the governed Rig Name, not the Rig Code.
 - `NNNN` is a four-digit counter owned by the exact Rig/Department pair, beginning at `0001` and ending at `9999`.
 - Counter allocation, final approval, publication, and replacement of the Temporary JSA Number occur in one transaction. The Rig/Department counter is locked so concurrent approvals cannot receive the same value.
 - An Official JSA Number is immutable. Revisions and historical versions retain the same Official JSA Number owned by their JSA Master.
-- Rig and Department codes are governed organization data. Administrators manage them through JSAMS with permission, data-scope, audit, optimistic-lock, hierarchy, and deactivate/reactivate controls; records are not physically deleted.
+- Rig names and Department codes are governed organization data. Administrators manage them through JSAMS with permission, data-scope, audit, optimistic-lock, hierarchy, and deactivate/reactivate controls; records are not physically deleted.
 - Each site uses a non-overlapping sequence range.
 - GoldenGate replicates source primary and foreign key values unchanged.
 - A target site must not regenerate identifiers for replicated records.
@@ -372,7 +387,7 @@ The following are confirmed:
 30. New JSAs have no Job Type classification; Job Type is not requested or assigned during creation.
 31. Every source JSA is created in English. Language is system-assigned rather than user-selected, and any non-English content follows the separate Translation lifecycle after source publication.
 32. A creator can retrieve and resume their own active Draft or Returned Working Versions after leaving the worksheet, provided the records remain within the creator's effective application permission and data scope.
-33. Draft and approval use a Temporary JSA Number. Initial publication atomically replaces it with an immutable Official JSA Number formatted `<Rig code>-<Department code>-NNNN`, where `NNNN` is the concurrency-safe `0001`–`9999` counter for that exact Rig/Department pair.
+33. Draft and approval use a Temporary JSA Number. Initial publication atomically replaces it with an immutable Official JSA Number formatted `<Rig name>-<Department code>-NNNN`; the Rig segment is the governed Rig Name rather than the Rig Code, and `NNNN` is the concurrency-safe `0001`–`9999` counter for that exact Rig/Department pair.
 34. Rig and Department are governed, auditable organization data administered in JSAMS. Their parent hierarchy cannot be moved after creation, and deactivation is used instead of physical deletion.
 35. JSA General Information displays Status as non-editable state and displays Owner Site, Rig, and Department by governed code and name rather than editable identifiers. Job Title is the only authored general-information text field. Job Description, Permit to Work selection/reference, Location, and Personnel are not collected as JSA authoring fields.
 36. Procedure References are not collected during JSA creation or revision and their absence does not create a validation warning or block submission. Legacy Procedure Reference snapshots remain historical data but are not carried forward by current Working Version saves.
@@ -383,11 +398,21 @@ The following are confirmed:
 41. The applied Matrix Version governs Probability and Severity definitions plus Risk Result meaning, description, display color, operational guidance, and any prohibited-Residual-Risk rule. Its Risk Colour Overview is visible during JSA creation, revision, and approval review.
 42. The JSA Risk Matrix presents Probability definitions, Severity definitions, matrix cells, and Risk Colour Overview together in one continuous block; the row-level risk selectors remain the interaction used to choose Initial Probability, Initial Severity, and Residual Probability.
 43. The confirmed PV Drilling 5x5 Matrix uses the five Probability definitions, five Severity definitions, four Risk Colour zones, and explicit 25-cell mapping recorded in the applied governed Matrix Version; a later material change creates a new version rather than rewriting a version already assigned or referenced.
-44. The confirmed 25-item PV Drilling Hazard Assessment Prompt checklist is governed at Rig scope, presented as independent checkboxes, and snapshotted only when selected into a JSA Version.
+44. The confirmed 25-item PV Drilling Hazard Assessment Prompt checklist is governed once at Global scope and shared by every Rig, presented as independent checkboxes, and snapshotted only when selected into a JSA Version.
 45. The JSA attachment picker is an Explorer locked to the JSA's exact Site/Rig/Department. It supports governed folder navigation and exact-version selection only; library administration remains a separate permission and interface.
 46. A Returned Working Version displays its complete accumulated approval history on the same correction screen, including prior Submit, Approve, Return, Reject, Publish, and Comment evidence where present; resubmission appends a new cycle and never replaces prior history.
 47. A read-only JSA presents immutable content as readable static information. Authoring controls, selection controls, add/insert/delete actions, picker launchers, and editable-only table columns are not shown. The complete governed Hazard Assessment Prompt list remains visible with clear selected/not-selected state, while historical selected snapshots remain visible even if a Prompt is no longer in the current list; risk values, Position snapshots, Tool snapshots, and exact Attachment snapshots also remain clearly visible.
 48. Current operational JSA printing is available only for the exact current Published source JSA Version. The approved HTML print form populates business content through Basic Job Step from that immutable Version; every section beginning with `PERSONAL INVOLVED` is an intentionally blank form layout for manual completion, and browser printing is the PDF-generation mechanism.
+49. The JSA workspace uses one global Working Rig selection across My Drafts, approval queues, Published JSA, queue counts, and Create JSA. Users may select `All governed rigs`; selecting one specific Rig filters JSA reads/counts and fixes the creation context to that Rig without expanding authorization. Administration retains its own explicit scope controls.
+50. Create JSA is initiated from the Published JSA workspace and remains in one modal over that workspace. Create JSA is not a separate navigation destination or standalone page: after the ownership context is confirmed and the draft is created, the same modal changes to the complete single-screen Working Version worksheet without changing the current page or URL.
+51. The ownership-selection step does not display an Effective Risk Matrix summary. The system resolves and validates the Rig's effective Matrix automatically; the applied Matrix and its governed guidance remain visible in the complete Working Version worksheet and subsequent review views.
+52. The confirmed PV Drilling 3x3 Matrix uses the three Likelihood definitions, the three people/asset/environment Severity definitions, the nine numeric cell ratings, and the Acceptable/Tolerable/Unacceptable result mapping recorded in its governed Matrix Version. Red/Unacceptable is prohibited as Residual Risk, and a material change requires a new Matrix Version.
+53. The confirmed Site/Rig hierarchy consists of Offshore with eight named PV DRILLING Rigs and Onshore with Shorebase. Correcting the development identities to this hierarchy preserves existing Site/Rig IDs and their JSA, Department, Matrix-assignment, master-data, and authorization relationships.
+54. `PV DRILLING V` uses the governed 5x5 Matrix Version. Every other currently confirmed Rig, including Shorebase, uses the governed 3x3 Matrix Version. Reassignment is effective-dated; prior assignment rows remain historical rather than being rewritten.
+55. All nine confirmed Rigs use the same ten-Department catalogue. Department-code uniqueness is enforced within the exact Site/Rig scope so official JSA numbering can use the same Department code independently on each Rig.
+56. The confirmed Department codes are `3P`, `DR`, `EL`, `ET`, `ME`, `MAR`, `MED`, `WE`, `CAT`, and `STC`, mapped respectively to Third Party, Drilling, Electrician, Electronics, Mechanic, Marine, Medic, Welder, Catering, and STC. Existing Department identities are retained when these governed codes are corrected.
+57. The confirmed 35-item Position catalogue is governed once at Global scope and is available to every Site and Rig for Basic Job Step Performer and Supervisor selection. Existing Position identities are retained when matching scoped records are promoted to Global.
+58. The confirmed 53-item Tool catalogue and its `JSA Tools` category are governed once at Global scope and are available to every Site and Rig for Basic Job Step Tool selection. Existing Tool identities are retained when matching scoped records are promoted to Global.
 
 ## 21. Open business decisions
 
@@ -399,7 +424,6 @@ The following require explicit business confirmation before implementation:
 - who may Cancel, Retire, or reactivate a JSA and under what conditions;
 - whether annual review may directly produce a Retired outcome;
 - exact annual-review due-date, reminder, grace-period, and overdue behavior;
-- final 3x3 and 5x5 matrix definitions, labels, thresholds, colors, and change policy;
 - tolerable-risk escalation behavior;
 - translation languages, SLA, fallback behavior, reassignment, and OUTDATED historical-view policy;
 - cross-rig copy eligibility, carried fields, mapping failures, and mandatory reapproval;

@@ -211,9 +211,21 @@ export class JsaWorkflowService {
     await this.record(user, `JSA_WORKFLOW_${action}`, jsaId);
     return this.detail(jsaId, user);
   }
-  async queue(kind: 'approvals' | 'pending' | 'rejected' | 'published', user: AuthenticatedUser) {
+  async queue(
+    kind: 'approvals' | 'pending' | 'rejected' | 'published',
+    user: AuthenticatedUser,
+    rigId?: string,
+  ) {
     this.capabilities.require(user, 'view');
-    return this.oracle.withTransaction((c) => this.repository.listQueue(c, kind, user.userId));
+    return this.oracle.withTransaction((c) =>
+      this.repository.listQueue(c, kind, user.userId, rigId),
+    );
+  }
+  async navigationCounts(user: AuthenticatedUser, rigId?: string) {
+    this.capabilities.require(user, 'view');
+    return this.oracle.withTransaction((c) =>
+      this.repository.navigationCounts(c, user.userId, rigId),
+    );
   }
   async detail(jsaId: string, user: AuthenticatedUser) {
     this.capabilities.require(user, 'view');

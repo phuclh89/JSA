@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import type { AuthenticatedUser } from '@jsams/shared-types';
 import { EnterpriseAuthGuard } from '../../common/auth/enterprise-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -15,11 +15,18 @@ export class JsaWorkflowController {
   @Get('capabilities') capabilities(@CurrentUser() user: AuthenticatedUser) {
     return this.service.capabilityState(user);
   }
-  @Get('queues/:kind') queue(
-    @Param('kind') kind: 'approvals' | 'pending' | 'rejected' | 'published',
+  @Get('navigation-counts') navigationCounts(
+    @Query('rigId') rigId: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.service.queue(kind, user);
+    return this.service.navigationCounts(user, rigId);
+  }
+  @Get('queues/:kind') queue(
+    @Param('kind') kind: 'approvals' | 'pending' | 'rejected' | 'published',
+    @Query('rigId') rigId: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.queue(kind, user, rigId);
   }
   @Get('notifications') notifications(@CurrentUser() user: AuthenticatedUser) {
     return this.service.notifications(user);

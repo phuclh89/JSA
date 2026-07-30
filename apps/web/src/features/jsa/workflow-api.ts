@@ -2,6 +2,7 @@ import type {
   NotificationItem,
   WorkflowDefinitionSummary,
   WorkflowInstanceDetail,
+  WorkflowNavigationCounts,
   WorkflowPreview,
   WorkflowQueueItem,
   WorkflowRoleAssignment,
@@ -25,8 +26,14 @@ export const workflowApi = {
   detail: (id: string) => apiClient.get<WorkflowInstanceDetail>(`/jsa-workflow/${id}`),
   action: (id: string, action: 'approve' | 'return' | 'reject' | 'comment', comment?: string) =>
     apiClient.post<WorkflowInstanceDetail>(`/jsa-workflow/${id}/${action}`, { comment }),
-  queue: (kind: 'approvals' | 'pending' | 'rejected' | 'published') =>
-    apiClient.get<WorkflowQueueItem[]>(`/jsa-workflow/queues/${kind}`),
+  queue: (kind: 'approvals' | 'pending' | 'rejected' | 'published', rigId?: string) =>
+    apiClient.get<WorkflowQueueItem[]>(
+      `/jsa-workflow/queues/${kind}${rigId ? `?rigId=${rigId}` : ''}`,
+    ),
+  navigationCounts: (rigId?: string) =>
+    apiClient.get<WorkflowNavigationCounts>(
+      `/jsa-workflow/navigation-counts${rigId ? `?rigId=${rigId}` : ''}`,
+    ),
   notifications: () => apiClient.get<NotificationItem[]>('/jsa-workflow/notifications'),
   definitions: () => apiClient.get<WorkflowDefinitionSummary[]>('/jsa-workflow/definitions'),
   saveDefinition: (body: unknown) =>

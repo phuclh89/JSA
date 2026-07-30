@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { JsaCreatePage } from './jsa-create-page';
+import { JsaCreateModal } from './jsa-create-page';
 import { jsaApi } from './jsa-api';
 
 vi.mock('./jsa-api', () => ({
@@ -12,8 +12,14 @@ vi.mock('./jsa-api', () => ({
     create: vi.fn(),
   },
 }));
+vi.mock('./rig-context', () => ({
+  useRigContext: () => ({
+    selectedRig: undefined,
+    setSelectedRigId: vi.fn(),
+  }),
+}));
 
-describe('JsaCreatePage', () => {
+describe('JsaCreateModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(jsaApi.options).mockResolvedValue([]);
@@ -25,7 +31,7 @@ describe('JsaCreatePage', () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <JsaCreatePage />
+          <JsaCreateModal open onClose={vi.fn()} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -59,7 +65,7 @@ describe('JsaCreatePage', () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <JsaCreatePage />
+          <JsaCreateModal open onClose={vi.fn()} />
         </MemoryRouter>
       </QueryClientProvider>,
     );

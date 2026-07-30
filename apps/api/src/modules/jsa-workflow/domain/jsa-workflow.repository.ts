@@ -65,7 +65,19 @@ export interface JsaWorkflowRepository {
     context: OracleTransactionContext,
     kind: 'approvals' | 'pending' | 'rejected' | 'published',
     userId: string,
+    rigId?: string,
   ): Promise<any[]>;
+  navigationCounts(
+    context: OracleTransactionContext,
+    userId: string,
+    rigId?: string,
+  ): Promise<{
+    drafts: number;
+    approvals: number;
+    pending: number;
+    rejected: number;
+    published: number;
+  }>;
   detail(context: OracleTransactionContext, jsaId: string): Promise<any | undefined>;
   definitions(context: OracleTransactionContext): Promise<any[]>;
   saveDefinition(

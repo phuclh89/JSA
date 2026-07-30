@@ -497,7 +497,7 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
       throw new StateConflictError('JSA number status is invalid for publication');
 
     const hierarchy = await c.connection.execute<Row>(
-      `SELECT R.RIG_CODE,D.DEPARTMENT_CODE
+      `SELECT R.RIG_NAME,D.DEPARTMENT_CODE
        FROM SYS_RIG R
        JOIN SYS_DEPARTMENT D
          ON D.RIG_ID=R.RIG_ID AND D.SITE_ID=R.SITE_ID
@@ -545,7 +545,7 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
     const nextNumber = Number(counter.rows?.[0]?.LAST_NUMBER ?? -1) + 1;
     if (!Number.isInteger(nextNumber) || nextNumber < 1 || nextNumber > 9999)
       throw new StateConflictError('The Rig/Department JSA number range 0001-9999 is exhausted');
-    const officialNumber = `${ownership.RIG_CODE}-${ownership.DEPARTMENT_CODE}-${String(nextNumber).padStart(4, '0')}`;
+    const officialNumber = `${ownership.RIG_NAME}-${ownership.DEPARTMENT_CODE}-${String(nextNumber).padStart(4, '0')}`;
     if (officialNumber.length > 100)
       throw new StateConflictError('Official JSA number exceeds 100 characters');
 
@@ -581,7 +581,9 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
     c: OracleTransactionContext,
     kind: 'approvals' | 'pending' | 'rejected' | 'published',
     userId: string,
+    rigId?: string,
   ): Promise<any[]> {
+    if (rigId) assertOracleId(rigId, 'rigId');
     const clauses = {
       approvals: `T.ASSIGNEE_USER_ID=:userId AND T.TASK_STATUS='PENDING'`,
       pending: `M.CREATOR_USER_ID=:userId AND I.INSTANCE_STATUS IN ('ACTIVE','RETURNED')`,
@@ -589,8 +591,47 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
       published: `M.LIFECYCLE_STATUS='PUBLISHED'`,
     };
     const result = await c.connection.execute<Row>(
-      `SELECT TO_CHAR(I.INSTANCE_ID) INSTANCE_ID,TO_CHAR(M.JSA_ID) JSA_ID,M.JSA_NUMBER,V.JOB_TITLE,V.VERSION_STATUS,S.STEP_NAME CURRENT_STEP_NAME,T.ASSIGNED_AT,I.UPDATED_AT FROM JSA_WORKFLOW_INSTANCE I JOIN JSA_MASTER M ON M.JSA_ID=I.JSA_ID JOIN JSA_VERSION V ON V.JSA_VERSION_ID=I.JSA_VERSION_ID LEFT JOIN JSA_WORKFLOW_TASK T ON T.INSTANCE_ID=I.INSTANCE_ID AND T.CYCLE_NUMBER=I.CYCLE_NUMBER AND T.TASK_STATUS='PENDING' LEFT JOIN JSA_WORKFLOW_STEP S ON S.STEP_ID=T.STEP_ID WHERE ${clauses[kind]} AND EXISTS(SELECT 1 FROM SYS_USER_DATA_SCOPE DS WHERE DS.USER_ID=:userId AND DS.IS_ACTIVE='Y' AND DS.EFFECTIVE_FROM<=SYSTIMESTAMP AND (DS.EFFECTIVE_TO IS NULL OR DS.EFFECTIVE_TO>=SYSTIMESTAMP) AND DS.CAN_VIEW='Y' AND DS.SITE_ID=M.OWNER_SITE_ID AND (DS.SCOPE_TYPE='SITE' OR (DS.SCOPE_TYPE='RIG' AND DS.RIG_ID=M.RIG_ID) OR (DS.SCOPE_TYPE='DEPARTMENT' AND DS.DEPARTMENT_ID=M.DEPARTMENT_ID AND (DS.RIG_ID IS NULL OR DS.RIG_ID=M.RIG_ID)))) ORDER BY I.UPDATED_AT DESC`,
-      { userId },
+      `SELECT TO_CHAR(I.INSTANCE_ID) INSTANCE_ID,TO_CHAR(M.JSA_ID) JSA_ID,
+              M.JSA_NUMBER,V.JOB_TITLE,V.VERSION_STATUS,
+              SI.SITE_CODE,SI.SITE_NAME,R.RIG_CODE,R.RIG_NAME,
+              D.DEPARTMENT_CODE,D.DEPARTMENT_NAME,
+              S.STEP_NAME CURRENT_STEP_NAME,T.ASSIGNED_AT,
+              V.PUBLISHED_AT,V.PUBLISHED_BY_USERNAME,I.UPDATED_AT
+         FROM JSA_WORKFLOW_INSTANCE I
+         JOIN JSA_MASTER M ON M.JSA_ID=I.JSA_ID
+         JOIN JSA_VERSION V ON V.JSA_VERSION_ID=I.JSA_VERSION_ID
+         JOIN SYS_SITE SI ON SI.SITE_ID=M.OWNER_SITE_ID
+         JOIN SYS_RIG R ON R.RIG_ID=M.RIG_ID AND R.SITE_ID=M.OWNER_SITE_ID
+         JOIN SYS_DEPARTMENT D ON D.DEPARTMENT_ID=M.DEPARTMENT_ID
+                              AND D.RIG_ID=M.RIG_ID
+                              AND D.SITE_ID=M.OWNER_SITE_ID
+         LEFT JOIN JSA_WORKFLOW_TASK T ON T.INSTANCE_ID=I.INSTANCE_ID
+                                      AND T.CYCLE_NUMBER=I.CYCLE_NUMBER
+                                      AND T.TASK_STATUS='PENDING'
+         LEFT JOIN JSA_WORKFLOW_STEP S ON S.STEP_ID=T.STEP_ID
+        WHERE ${clauses[kind]}
+          AND (:rigId IS NULL OR M.RIG_ID=:rigId)
+          AND EXISTS(
+            SELECT 1
+              FROM SYS_USER_DATA_SCOPE DS
+             WHERE DS.USER_ID=:userId
+               AND DS.IS_ACTIVE='Y'
+               AND DS.EFFECTIVE_FROM<=SYSTIMESTAMP
+               AND (DS.EFFECTIVE_TO IS NULL OR DS.EFFECTIVE_TO>=SYSTIMESTAMP)
+               AND DS.CAN_VIEW='Y'
+               AND DS.SITE_ID=M.OWNER_SITE_ID
+               AND (
+                 DS.SCOPE_TYPE='SITE'
+                 OR (DS.SCOPE_TYPE='RIG' AND DS.RIG_ID=M.RIG_ID)
+                 OR (
+                   DS.SCOPE_TYPE='DEPARTMENT'
+                   AND DS.DEPARTMENT_ID=M.DEPARTMENT_ID
+                   AND (DS.RIG_ID IS NULL OR DS.RIG_ID=M.RIG_ID)
+                 )
+               )
+          )
+        ORDER BY I.UPDATED_AT DESC`,
+      { userId, rigId: rigId ?? null },
       options,
     );
     return (result.rows ?? []).map((r) => ({
@@ -598,11 +639,98 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
       jsaId: r.JSA_ID,
       jsaNumber: r.JSA_NUMBER,
       ...(r.JOB_TITLE ? { jobTitle: r.JOB_TITLE } : {}),
+      ownerSiteCode: r.SITE_CODE,
+      ownerSiteName: r.SITE_NAME,
+      rigCode: r.RIG_CODE,
+      rigName: r.RIG_NAME,
+      departmentCode: r.DEPARTMENT_CODE,
+      departmentName: r.DEPARTMENT_NAME,
       versionStatus: r.VERSION_STATUS,
       ...(r.CURRENT_STEP_NAME ? { currentStepName: r.CURRENT_STEP_NAME } : {}),
       ...(r.ASSIGNED_AT ? { assignedAt: r.ASSIGNED_AT } : {}),
+      ...(r.PUBLISHED_AT ? { publishedAt: r.PUBLISHED_AT } : {}),
+      ...(r.PUBLISHED_BY_USERNAME ? { publishedByUsername: r.PUBLISHED_BY_USERNAME } : {}),
       updatedAt: r.UPDATED_AT,
     }));
+  }
+  async navigationCounts(
+    c: OracleTransactionContext,
+    userId: string,
+    rigId?: string,
+  ): Promise<{
+    drafts: number;
+    approvals: number;
+    pending: number;
+    rejected: number;
+    published: number;
+  }> {
+    if (rigId) assertOracleId(rigId, 'rigId');
+    const result = await c.connection.execute<Row>(
+      `WITH ACCESSIBLE_JSA AS (
+         SELECT M.JSA_ID,M.CREATOR_USER_ID,M.LIFECYCLE_STATUS,
+                V.JSA_VERSION_ID,V.VERSION_STATUS
+           FROM JSA_MASTER M
+           JOIN JSA_VERSION V
+             ON V.JSA_VERSION_ID=COALESCE(M.WORKING_VERSION_ID,M.CURRENT_VERSION_ID)
+          WHERE (:rigId IS NULL OR M.RIG_ID=:rigId)
+            AND EXISTS(
+            SELECT 1
+              FROM SYS_USER_DATA_SCOPE DS
+             WHERE DS.USER_ID=:userId
+               AND DS.IS_ACTIVE='Y'
+               AND DS.EFFECTIVE_FROM<=SYSTIMESTAMP
+               AND (DS.EFFECTIVE_TO IS NULL OR DS.EFFECTIVE_TO>=SYSTIMESTAMP)
+               AND DS.CAN_VIEW='Y'
+               AND DS.SITE_ID=M.OWNER_SITE_ID
+               AND (
+                 DS.SCOPE_TYPE='SITE'
+                 OR (DS.SCOPE_TYPE='RIG' AND DS.RIG_ID=M.RIG_ID)
+                 OR (
+                   DS.SCOPE_TYPE='DEPARTMENT'
+                   AND DS.DEPARTMENT_ID=M.DEPARTMENT_ID
+                   AND (DS.RIG_ID IS NULL OR DS.RIG_ID=M.RIG_ID)
+                 )
+               )
+          )
+       )
+       SELECT
+         COUNT(DISTINCT CASE
+           WHEN A.CREATOR_USER_ID=:userId
+            AND A.VERSION_STATUS IN ('DRAFT','RETURNED')
+           THEN A.JSA_ID END) DRAFTS_COUNT,
+         COUNT(DISTINCT CASE
+           WHEN T.ASSIGNEE_USER_ID=:userId
+            AND T.TASK_STATUS='PENDING'
+           THEN A.JSA_ID END) APPROVALS_COUNT,
+         COUNT(DISTINCT CASE
+           WHEN A.CREATOR_USER_ID=:userId
+            AND I.INSTANCE_STATUS IN ('ACTIVE','RETURNED')
+           THEN A.JSA_ID END) PENDING_COUNT,
+         COUNT(DISTINCT CASE
+           WHEN A.CREATOR_USER_ID=:userId
+            AND I.INSTANCE_STATUS='REJECTED'
+           THEN A.JSA_ID END) REJECTED_COUNT,
+         COUNT(DISTINCT CASE
+           WHEN A.LIFECYCLE_STATUS='PUBLISHED'
+           THEN A.JSA_ID END) PUBLISHED_COUNT
+         FROM ACCESSIBLE_JSA A
+         LEFT JOIN JSA_WORKFLOW_INSTANCE I
+           ON I.JSA_ID=A.JSA_ID
+          AND I.JSA_VERSION_ID=A.JSA_VERSION_ID
+         LEFT JOIN JSA_WORKFLOW_TASK T
+           ON T.INSTANCE_ID=I.INSTANCE_ID
+          AND T.CYCLE_NUMBER=I.CYCLE_NUMBER`,
+      { userId, rigId: rigId ?? null },
+      options,
+    );
+    const row = result.rows?.[0];
+    return {
+      drafts: Number(row?.DRAFTS_COUNT ?? 0),
+      approvals: Number(row?.APPROVALS_COUNT ?? 0),
+      pending: Number(row?.PENDING_COUNT ?? 0),
+      rejected: Number(row?.REJECTED_COUNT ?? 0),
+      published: Number(row?.PUBLISHED_COUNT ?? 0),
+    };
   }
   async detail(c: OracleTransactionContext, jsaId: string): Promise<any | undefined> {
     assertOracleId(jsaId);

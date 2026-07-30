@@ -4,6 +4,26 @@
   margin: 0 auto;
 }
 
+.jsa-create-modal--worksheet {
+  max-width: none;
+  top: 16px;
+  padding-bottom: 16px;
+}
+
+.jsa-create-modal--worksheet .ant-modal-body {
+  max-height: calc(100vh - 96px);
+  padding-inline-end: 6px;
+  overflow-y: auto;
+}
+
+.jsa-create-modal--worksheet .jsa-editor-heading {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding-block: 4px 10px;
+  background: var(--color-surface);
+}
+
 .eyebrow {
   font-size: 12px;
   font-weight: 800;
@@ -15,16 +35,6 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-16);
-}
-
-.matrix-summary {
-  min-height: 72px;
-  padding: var(--space-12);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-input);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .jsa-editor-heading {
@@ -1143,6 +1153,16 @@
 }
 
 @media (max-width: 767px) {
+  .jsa-create-modal--worksheet {
+    width: calc(100vw - 16px) !important;
+    top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .jsa-create-modal--worksheet .ant-modal-body {
+    max-height: calc(100vh - 72px);
+  }
+
   .jsa-form-grid,
   .worksheet-general-grid,
   .reference-grid,

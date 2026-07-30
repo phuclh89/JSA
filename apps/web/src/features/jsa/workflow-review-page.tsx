@@ -32,6 +32,7 @@ export function WorkflowReviewPage() {
       setComment('');
       void qc.invalidateQueries({ queryKey: ['workflow-detail', id] });
       void qc.invalidateQueries({ queryKey: ['workflow-queue'] });
+      void qc.invalidateQueries({ queryKey: ['jsa-navigation-counts'] });
       message.success('Workflow action completed');
     },
     onError: (e) => message.error((e as ApiClientError).message),

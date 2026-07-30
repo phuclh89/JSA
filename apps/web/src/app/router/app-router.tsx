@@ -3,13 +3,12 @@ import { AppShell } from '../../components/layout/app-shell';
 import { AccessDeniedPage, NotFoundPage } from '../../components/feedback/pages';
 import { AuthenticatedRoute, PermissionRoute } from '../../features/auth/route-guards';
 import { HealthPage } from '../../features/health/health-page';
-import { BrowseHomePage, SecurityFoundationPage } from '../../components/feedback/phase-one-pages';
+import { SecurityFoundationPage } from '../../components/feedback/phase-one-pages';
 import { MasterDataPage } from '../../features/administration/master-data-page';
 import { RiskMatricesPage } from '../../features/administration/risk-matrices-page';
 import { RiskMatrixEditor } from '../../features/administration/risk-matrix-editor';
 import { RigMatrixAssignmentsPage } from '../../features/administration/rig-matrix-assignments-page';
 import { OrganizationPage } from '../../features/administration/organization-page';
-import { JsaCreatePage } from '../../features/jsa/jsa-create-page';
 import { JsaDraftEditor } from '../../features/jsa/jsa-draft-editor';
 import { JsaPrintPage } from '../../features/jsa/jsa-print-page';
 import { MyDraftsPage } from '../../features/jsa/my-drafts-page';
@@ -47,7 +46,7 @@ export function AppRouter() {
           </AuthenticatedRoute>
         }
       >
-        <Route index element={<Navigate to="/browse" replace />} />
+        <Route index element={<Navigate to="/jsa/drafts" replace />} />
         <Route
           path="/operations/attachment-library"
           element={
@@ -56,30 +55,20 @@ export function AppRouter() {
             </PermissionRoute>
           }
         />
-        <Route
-          path="/browse"
-          element={
-            <PermissionRoute permission="SYSTEM_HEALTH_VIEW">
-              <BrowseHomePage />
-            </PermissionRoute>
-          }
-        />
+        <Route path="/browse" element={<Navigate to="/jsa/drafts" replace />} />
         <Route
           path="/system/health"
+          element={<Navigate to="/operations/system-health" replace />}
+        />
+        <Route
+          path="/operations/system-health"
           element={
             <PermissionRoute permission="SYSTEM_HEALTH_VIEW">
               <HealthPage />
             </PermissionRoute>
           }
         />
-        <Route
-          path="/jsa/new"
-          element={
-            <JsaCapabilityRoute capability="create">
-              <JsaCreatePage />
-            </JsaCapabilityRoute>
-          }
-        />
+        <Route path="/jsa/new" element={<Navigate to="/jsa/published" replace />} />
         <Route
           path="/jsa/drafts"
           element={

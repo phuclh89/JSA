@@ -47,7 +47,7 @@ Sequence: `SEQ_SYS_RIG`.
 
 ### `SYS_DEPARTMENT`
 
-Department scoped to a site and optionally a rig. Columns: `DEPARTMENT_ID NUMBER(19)`, `SITE_ID NUMBER(19)`, nullable `RIG_ID NUMBER(19)`, `DEPARTMENT_CODE VARCHAR2(50 CHAR)`, `DEPARTMENT_NAME VARCHAR2(200 CHAR)`, created/updated site IDs, and standard mutable columns. Site and rig/site foreign keys enforce hierarchy. `(SITE_ID, DEPARTMENT_CODE)` defines the confirmed Phase 1 uniqueness scope. Composite unique constraints support scope validation. `IX_SYS_DEPT_SITE_RIG` supports site/rig lookup.
+Department scoped to a site and optionally a rig. Columns: `DEPARTMENT_ID NUMBER(19)`, `SITE_ID NUMBER(19)`, nullable `RIG_ID NUMBER(19)`, `DEPARTMENT_CODE VARCHAR2(50 CHAR)`, `DEPARTMENT_NAME VARCHAR2(200 CHAR)`, created/updated site IDs, and standard mutable columns. Site and rig/site foreign keys enforce hierarchy. Migration 013 replaces the original Site-only code constraint with `UK_SYS_DEPT_RIG_CODE` on `(SITE_ID, RIG_ID, DEPARTMENT_CODE)`, allowing the same governed code on different Rigs while rejecting duplicates inside one Rig. Composite unique constraints support scope validation. `IX_SYS_DEPT_SITE_RIG` supports site/rig lookup.
 
 Sequence: `SEQ_SYS_DEPARTMENT`.
 
@@ -128,7 +128,7 @@ Sequence: `SEQ_SYS_USER_DATA_SCOPE`.
 ## Constraint and index inventory
 
 - Primary keys: `PK_SYS_SITE`, `PK_SYS_RIG`, `PK_SYS_DEPARTMENT`, `PK_SYS_SITE_SEQ_RANGE`, `PK_SYS_USER`, `PK_SYS_ROLE`, `PK_SYS_PERMISSION`, `PK_SYS_USER_ROLE`, `PK_SYS_ROLE_PERMISSION`, `PK_SYS_USER_PERM_OVERRIDE`, and `PK_SYS_USER_DATA_SCOPE`.
-- Code/identity unique constraints: `UK_SYS_SITE_CODE`, `UK_SYS_SITE_SEQ_CODE`, `UK_SYS_RIG_SITE_CODE`, `UK_SYS_DEPT_SITE_CODE`, `UK_SYS_SITE_SEQ_RANGE`, `UK_SYS_USER_IDENTITY`, `UK_SYS_USER_USERNAME`, `UK_SYS_ROLE_CODE`, and `UK_SYS_PERMISSION_CODE`. Composite identity/hierarchy unique constraints on rig and department support relational composite foreign keys.
+- Code/identity unique constraints: `UK_SYS_SITE_CODE`, `UK_SYS_SITE_SEQ_CODE`, `UK_SYS_RIG_SITE_CODE`, `UK_SYS_DEPT_RIG_CODE`, `UK_SYS_SITE_SEQ_RANGE`, `UK_SYS_USER_IDENTITY`, `UK_SYS_USER_USERNAME`, `UK_SYS_ROLE_CODE`, and `UK_SYS_PERMISSION_CODE`. Composite identity/hierarchy unique constraints on rig and department support relational composite foreign keys.
 - Foreign keys: every site, rig, department, user, role, permission, assignment, override, and scope reference uses a named `FK_*`; no cascade delete is configured.
 - Checks: all active/system/access flags, positive row versions, override effects, scope types/targets, date order, range bounds, revoked state, and user default hierarchy use named `CHK_*` constraints.
 - Lookup indexes: `IX_SYS_RIG_SITE`, `IX_SYS_DEPT_SITE_RIG`, `IX_SYS_SEQ_RANGE_LOOKUP`, `IX_SYS_USER_DEFAULTS`, `IX_SYS_USER_ROLE_USER`, `IX_SYS_ROLE_PERM_ROLE`, `IX_SYS_USER_OVR_USER`, and `IX_SYS_USER_SCOPE_USER`.
@@ -150,7 +150,15 @@ Master-data codes are case-insensitively unique among active records inside thei
 
 No production master-data rows are seeded. Job types, prompts, positions, tools, languages, procedure references, parameter keys/values, and their ownership scopes require approved operational input.
 
-The configured development Oracle database contains the confirmed 25-item PV Drilling Hazard Assessment Prompt checklist at Rig scope for `DEV-RIG` (`RIG_ID=1000000`). The prior global development fixtures `ENERGY`, `DROPPED`, and `PINCH` are inactive rather than deleted so historical JSA prompt snapshots remain interpretable.
+The configured development Oracle database contains the confirmed 35-item PV Drilling Position catalogue at `GLOBAL` scope with null Site/Rig/Department ownership. Stable Position codes and exact names are stored in the supplied display order. The idempotent seed promotes an existing active code/name match in place to preserve `POSITION_ID`; any duplicate active scoped match is soft-deactivated rather than deleted.
+
+The configured development Oracle database also contains the confirmed 53-item PV Drilling Tool catalogue at `GLOBAL` scope under the Global `JSA_TOOLS — JSA Tools` Tool Category. Tool codes and exact names follow the supplied display order, and Site/Rig/Department ownership is null. The idempotent seed preserves a matching existing `TOOL_ID`, moves it to the governed category/scope, and soft-deactivates duplicate active scoped matches.
+
+The configured development Oracle database contains two active Sites: `OFFSHORE` (`SITE_ID=1000000`) and `ONSHORE` (`SITE_ID=1000100`). Offshore owns `PVD-I`, `PVD-II`, `PVD-III`, `PVD-V`, `PVD-VI`, `PVD-VIII`, `PVD-IX`, and `PVD-X`; Onshore owns `SHOREBASE`. The former development Site and Rig rows were corrected in place to `OFFSHORE` and `PVD-I`, preserving their identifiers and all existing foreign-key relationships.
+
+Each of the nine active Rigs contains the same ten active Departments: `3P — Third Party`, `DR — Drilling`, `EL — Electrician`, `ET — Electronics`, `ME — Mechanic`, `MAR — Marine`, `MED — Medic`, `WE — Welder`, `CAT — Catering`, and `STC — STC`. The configured development database therefore contains 90 active Rig-scoped Department rows. The governed-code correction updates the existing rows in place so their `DEPARTMENT_ID` values and foreign-key relationships remain unchanged.
+
+The confirmed 25-item PV Drilling Hazard Assessment Prompt checklist is configured once at `GLOBAL` scope with null Site/Rig ownership, so the same governed rows are effective for all nine active Rigs. The prior Rig-scoped rows are promoted in place to retain their `PROMPT_ID` values. The development fixtures `ENERGY`, `DROPPED`, and `PINCH` are inactive rather than deleted so historical JSA prompt snapshots remain interpretable.
 
 ## Phase 2 Risk Matrix model
 
@@ -167,7 +175,9 @@ Configuration remains editable only while a Matrix Version has never been assign
 
 Migration 004 creates 15 sequences for its 15 tables. `db:bootstrap:phase2` only configures those allowlisted sequences from the already-approved local Phase 1 range; it does not insert business data. GoldenGate must preserve all source IDs and must not replicate sequence state.
 
-The configured development Oracle database currently assigns `DEV-5X5 / PVDRILLING-V2` to Rig `1000000`. That immutable configuration contains five Probability rows, five Severity rows, four Risk Results (Dark Green, Light Green, Yellow, and Red), and 25 explicit cells matching the confirmed PV Drilling legacy 5x5 matrix. It was created with source-site Oracle sequences; the previous `DEV-V1` assignment was effective-ended rather than rewritten.
+The configured development Oracle database assigns `DEV-5X5 / PVDRILLING-V2` to `PVD-V`. That immutable configuration contains five Probability rows, five Severity rows, four Risk Results (Dark Green, Light Green, Yellow, and Red), and 25 explicit cells matching the confirmed PV Drilling legacy 5x5 matrix.
+
+The active `PVD-3X3 / V1` Matrix Version is based on Procedure Reference `P1.04.09`. It contains three Likelihood rows, three Severity rows with separate people/asset/environment definitions, three Risk Results, and nine explicit numeric cells. It is assigned to `PVD-I`, `PVD-II`, `PVD-III`, `PVD-VI`, `PVD-VIII`, `PVD-IX`, `PVD-X`, and `SHOREBASE`. Each Rig has exactly one current effective assignment; replaced assignments are effective-ended and retained as history.
 
 ## Phase 3 JSA Draft and version model
 
@@ -175,7 +185,7 @@ Migration 005 adds `JSA_MASTER`, `JSA_VERSION`, `JSA_VERSION_PROMPT`, `JSA_VERSI
 
 `JSA_VERSION_PROCEDURE_REF` is retained for historical compatibility. Current JSA creation/revision does not collect Procedure References, and an aggregate Working Version save deactivates any carried legacy rows by persisting an empty Procedure Reference collection.
 
-`JSA_MASTER` owns the stable business identity, ownership hierarchy, creator, lifecycle status, number status, and nullable Current/Working Version pointers. Initially Current is null and Working references the first Draft `JSA_VERSION`; `JSA_NUMBER` is temporary and `NUMBER_STATUS='TEMPORARY'`. Initial publication replaces it with the immutable Official number and sets `NUMBER_STATUS='OFFICIAL'`. Composite foreign keys ensure both pointers belong to the same Master.
+`JSA_MASTER` owns the stable business identity, ownership hierarchy, creator, lifecycle status, number status, and nullable Current/Working Version pointers. Initially Current is null and Working references the first Draft `JSA_VERSION`; `JSA_NUMBER` is temporary and `NUMBER_STATUS='TEMPORARY'`. Initial publication replaces it with the immutable Official number formatted `<Rig name>-<Department code>-NNNN` and sets `NUMBER_STATUS='OFFICIAL'`. The displayed Rig segment comes from `SYS_RIG.RIG_NAME`, while counter ownership continues to use the exact Rig/Department identifiers. Composite foreign keys ensure both pointers belong to the same Master.
 
 Migration 011 adds `JSA_NUMBER_COUNTER`, keyed by the exact Rig/Department pair and linked back to the owning Site hierarchy. `LAST_NUMBER` is constrained to `0`–`9999`; publication locks the Department/counter and increments it without `MAX()+1`. `TRG_JSA_OFFICIAL_NUM_IMMUTABLE` rejects later changes to `JSA_NUMBER`, `NUMBER_SCOPE_KEY`, or `NUMBER_STATUS` after official assignment.
 

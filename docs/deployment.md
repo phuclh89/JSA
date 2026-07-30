@@ -101,7 +101,7 @@ The seed uses Oracle sequences, inserts a complete new Matrix Version, effective
 
 After migration 005 and an approved Phase 1 Site/range exist, set `LOCAL_SITE_ID` and `PHASE3_BOOTSTRAP_ACTOR`, then run `pnpm db:bootstrap:phase3`. It configures only the 14 Phase 3 sequences and inserts no JSA, permission, numbering, or reference data. It fails closed for a missing/ambiguous range or partial prior configuration.
 
-Before enabling JSA routes, approve and create four permission codes and map them through `JSA_PERMISSION_VIEW`, `JSA_PERMISSION_CREATE`, `JSA_PERMISSION_EDIT`, and `JSA_PERMISSION_CANCEL`. Set all four or none; `SYSTEM_ADMIN` is not a substitute. `JSA_NUMBER_TEMPLATE` (must contain `{sequence}`; `{siteId}` is optional) and `JSA_NUMBER_UNIQUENESS_SCOPE` (`GLOBAL` or `SITE`) now govern only the Temporary number used before publication. Migration 011 and the publication transaction govern the Official `<Rig code>-<Department code>-NNNN` number; it has no environment-configurable format.
+Before enabling JSA routes, approve and create four permission codes and map them through `JSA_PERMISSION_VIEW`, `JSA_PERMISSION_CREATE`, `JSA_PERMISSION_EDIT`, and `JSA_PERMISSION_CANCEL`. Set all four or none; `SYSTEM_ADMIN` is not a substitute. `JSA_NUMBER_TEMPLATE` (must contain `{sequence}`; `{siteId}` is optional) and `JSA_NUMBER_UNIQUENESS_SCOPE` (`GLOBAL` or `SITE`) now govern only the Temporary number used before publication. Migration 011 and the publication transaction govern the Official `<Rig name>-<Department code>-NNNN` number; it has no environment-configurable format.
 
 ## Attachment Library storage and synchronization
 

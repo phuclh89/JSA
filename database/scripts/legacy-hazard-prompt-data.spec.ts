@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { legacyHazardPrompts } from './legacy-hazard-prompt-data.js';
 
@@ -36,5 +37,15 @@ describe('PV Drilling legacy Hazard Assessment Prompt seed', () => {
   it('uses unique stable codes', () => {
     expect(new Set(legacyHazardPrompts.map((item) => item.code)).size).toBe(25);
     expect(legacyHazardPrompts.every((item) => item.code.length <= 50)).toBe(true);
+  });
+
+  it('governs the shared catalogue at Global scope', async () => {
+    const seed = await readFile(
+      new URL('./seed-legacy-hazard-prompts.ts', import.meta.url),
+      'utf8',
+    );
+    expect(seed).toContain("SCOPE_TYPE='GLOBAL',SITE_ID=NULL,RIG_ID=NULL");
+    expect(seed).toContain("'GLOBAL',NULL,NULL,NULL,:actor,:actor");
+    expect(seed).not.toContain('HAZARD_PROMPT_SEED_RIG_ID');
   });
 });

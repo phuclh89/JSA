@@ -47,7 +47,7 @@ export class JsaDraftService {
     user: AuthenticatedUser,
   ) {
     if (kind === 'sites' || kind === 'rigs' || kind === 'departments') {
-      this.capabilities.require(user, 'create');
+      this.capabilities.require(user, kind === 'rigs' ? 'view' : 'create');
       return this.masterData.scopeOptions(
         kind === 'sites' ? 'SITE' : kind === 'rigs' ? 'RIG' : 'DEPARTMENT',
         siteId,
@@ -113,9 +113,11 @@ export class JsaDraftService {
     });
     return this.detail(id, user);
   }
-  myDrafts(user: AuthenticatedUser) {
+  myDrafts(user: AuthenticatedUser, rigId?: string) {
     this.capabilities.require(user, 'view');
-    return this.oracle.withTransaction((context) => this.repository.listMine(context, user.userId));
+    return this.oracle.withTransaction((context) =>
+      this.repository.listMine(context, user.userId, rigId),
+    );
   }
   async detail(id: string, user: AuthenticatedUser): Promise<JsaDraftDetail> {
     this.capabilities.require(user, 'view');

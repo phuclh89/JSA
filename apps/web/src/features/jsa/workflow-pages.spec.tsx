@@ -29,8 +29,16 @@ vi.mock('./workflow-api', () => ({
         jsaId: '10',
         jsaNumber: 'JSA-10',
         jobTitle: 'Lift equipment',
+        ownerSiteCode: 'DEV',
+        ownerSiteName: 'Development',
+        rigCode: 'DEV-RIG',
+        rigName: 'Development Rig',
+        departmentCode: 'DRILL',
+        departmentName: 'Drilling',
         versionStatus: 'STC_REVIEW',
         currentStepName: 'STC',
+        publishedAt: '2026-07-23T00:00:00Z',
+        publishedByUsername: 'oim.user',
         updatedAt: '2026-07-23T00:00:00Z',
       },
     ]),
@@ -103,6 +111,20 @@ vi.mock('./workflow-api', () => ({
     action: vi.fn(),
   },
 }));
+vi.mock('./jsa-api', () => ({
+  jsaApi: {
+    capabilities: vi.fn(async () => ({
+      configured: true,
+      view: true,
+      create: true,
+      edit: true,
+      cancel: true,
+    })),
+  },
+}));
+vi.mock('./rig-context', () => ({
+  useRigContext: () => ({ selectedRigId: undefined }),
+}));
 vi.mock('../auth/auth-context', () => ({ useCurrentUser: () => ({ userId: '9' }) }));
 const wrapper = (ui: React.ReactNode, path = '/') =>
   render(
@@ -117,6 +139,17 @@ describe('Phase 4 workflow pages', () => {
     wrapper(<WorkflowQueuePage kind="approvals" />);
     expect(await screen.findByText('JSA-10')).toBeInTheDocument();
     expect(screen.getByText('STC')).toBeInTheDocument();
+  });
+  it('shows the legacy-familiar Published JSA workspace', async () => {
+    wrapper(<WorkflowQueuePage kind="published" />);
+    expect(await screen.findByRole('heading', { name: 'Published JSA' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Published JSA operations' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'JSA folders' })).not.toBeInTheDocument();
+    expect(screen.getByText('JSA-10')).toBeInTheDocument();
+    expect(screen.getByText('Development Rig')).toBeInTheDocument();
+    expect(screen.getByText('Drilling')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Print JSA' })).toBeDisabled();
+    expect(screen.getByText('oim.user')).toBeInTheDocument();
   });
   it('shows review history and assigned approver actions', async () => {
     wrapper(

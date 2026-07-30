@@ -1,41 +1,34 @@
-import { DashboardOutlined, SafetyCertificateOutlined, SettingOutlined } from '@ant-design/icons';
+import { SafetyCertificateOutlined, SettingOutlined } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 
 export interface NavigationItem {
   key: string;
   label: string;
   permission: string;
-  area: 'browse' | 'operations';
+  area: 'jsa' | 'administration';
   icon: ReactNode;
 }
 
 export const navigationItems: NavigationItem[] = [
   {
-    key: '/browse',
-    label: 'Browse Home',
-    permission: 'SYSTEM_HEALTH_VIEW',
-    area: 'browse',
-    icon: <DashboardOutlined />,
-  },
-  {
-    key: '/system/health',
+    key: '/operations/system-health',
     label: 'System Health',
     permission: 'SYSTEM_HEALTH_VIEW',
-    area: 'browse',
+    area: 'administration',
     icon: <SafetyCertificateOutlined />,
   },
   {
     key: '/operations/security',
     label: 'Security Administration',
     permission: 'SYSTEM_ADMIN',
-    area: 'operations',
+    area: 'administration',
     icon: <SettingOutlined />,
   },
   {
     key: '/operations/attachment-library',
     label: 'Attachment Library',
     permission: 'ATTACHMENT_LIBRARY_ADMIN',
-    area: 'operations',
+    area: 'administration',
     icon: <SettingOutlined />,
   },
   ...(
@@ -62,7 +55,7 @@ export const navigationItems: NavigationItem[] = [
     key,
     label,
     permission: 'SYSTEM_ADMIN',
-    area: 'operations' as const,
+    area: 'administration' as const,
     icon: <SettingOutlined />,
   })),
 ];

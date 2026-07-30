@@ -3,6 +3,7 @@ import { ConfigProvider } from 'antd';
 import type { PropsWithChildren } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from '../../features/auth/auth-context';
+import { RigProvider } from '../../features/jsa/rig-context';
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 15_000, retry: 1 } },
 });
@@ -38,7 +39,9 @@ export function AppProviders({ children }: PropsWithChildren) {
     >
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <BrowserRouter>{children}</BrowserRouter>
+          <RigProvider>
+            <BrowserRouter>{children}</BrowserRouter>
+          </RigProvider>
         </AuthProvider>
       </QueryClientProvider>
     </ConfigProvider>

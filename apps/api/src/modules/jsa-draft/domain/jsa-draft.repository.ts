@@ -40,7 +40,11 @@ export interface JsaDraftRepository {
     userId: string,
     actor: string,
   ): Promise<string>;
-  listMine(context: OracleTransactionContext, userId: string): Promise<JsaDraftListItem[]>;
+  listMine(
+    context: OracleTransactionContext,
+    userId: string,
+    rigId?: string,
+  ): Promise<JsaDraftListItem[]>;
   access(
     context: OracleTransactionContext,
     jsaId: string,

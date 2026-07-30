@@ -33,8 +33,13 @@ const withoutRowVersion = (binds: Row) =>
 
 @Injectable()
 export class OracleJsaDraftRepository implements JsaDraftRepository {
-  async listMine(context: OracleTransactionContext, userId: string): Promise<JsaDraftListItem[]> {
+  async listMine(
+    context: OracleTransactionContext,
+    userId: string,
+    rigId?: string,
+  ): Promise<JsaDraftListItem[]> {
     assertOracleId(userId, 'userId');
+    if (rigId) assertOracleId(rigId, 'rigId');
     const result = await context.connection.execute<Row>(
       `SELECT TO_CHAR(M.JSA_ID) JSA_ID,TO_CHAR(V.JSA_VERSION_ID) VERSION_ID,M.JSA_NUMBER,V.JOB_TITLE,V.VERSION_STATUS,S.SITE_CODE,S.SITE_NAME,R.RIG_CODE,R.RIG_NAME,D.DEPARTMENT_CODE,D.DEPARTMENT_NAME,V.UPDATED_AT
        FROM JSA_MASTER M
@@ -45,6 +50,7 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
        WHERE M.CREATOR_USER_ID=:userId
          AND M.LIFECYCLE_STATUS='DRAFT'
          AND V.VERSION_STATUS IN ('DRAFT','RETURNED')
+         AND (:rigId IS NULL OR M.RIG_ID=:rigId)
          AND EXISTS(
            SELECT 1
            FROM SYS_USER_DATA_SCOPE DS
@@ -65,7 +71,7 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
              )
          )
        ORDER BY V.UPDATED_AT DESC,V.JSA_VERSION_ID DESC`,
-      { userId },
+      { userId, rigId: rigId ?? null },
       options,
     );
     return (result.rows ?? []).map((row) => ({

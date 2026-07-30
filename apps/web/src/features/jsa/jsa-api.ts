@@ -15,7 +15,8 @@ export interface CreateJsaDraftRequest {
 }
 export const jsaApi = {
   capabilities: () => apiClient.get<JsaDraftCapabilities>('/jsa-drafts/capabilities'),
-  myDrafts: () => apiClient.get<JsaDraftListItem[]>('/jsa-drafts/mine'),
+  myDrafts: (rigId?: string) =>
+    apiClient.get<JsaDraftListItem[]>(`/jsa-drafts/mine${rigId ? `?rigId=${rigId}` : ''}`),
   options: <T = MasterDataRecord>(kind: string, query = '') =>
     apiClient.get<T[]>(`/jsa-drafts/options/${kind}${query}`),
   attachmentPicker: <T>(query: string) => apiClient.get<T>(`/attachment-library/picker?${query}`),

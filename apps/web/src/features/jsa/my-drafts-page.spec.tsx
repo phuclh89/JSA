@@ -12,6 +12,9 @@ vi.mock('./jsa-api', () => ({
     capabilities: vi.fn(),
   },
 }));
+vi.mock('./rig-context', () => ({
+  useRigContext: () => ({ selectedRigId: undefined }),
+}));
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -61,7 +64,8 @@ describe('MyDraftsPage', () => {
 
     expect(await screen.findByText('DEV-10')).toBeInTheDocument();
     expect(screen.getByText('Repair pump')).toBeInTheDocument();
-    expect(screen.getByText('DEV / DEV-RIG')).toBeInTheDocument();
+    expect(screen.getByText('Development Rig')).toBeInTheDocument();
+    await user.click(screen.getByText('DEV-10'));
     await user.click(screen.getByRole('button', { name: 'Continue editing' }));
     expect(screen.getByText('Draft editor opened')).toBeInTheDocument();
   });
@@ -71,6 +75,6 @@ describe('MyDraftsPage', () => {
     renderPage();
 
     expect(await screen.findByText('You have no Draft or Returned JSA')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create JSA' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue editing' })).toBeDisabled();
   });
 });

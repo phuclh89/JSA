@@ -1,76 +1,231 @@
-import { Alert, Button, Card, Space, Spin, Table, Tag, Typography } from 'antd';
+import { FileSearchOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
+import { Alert, Button, Empty, Spin, Table, Tag, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { WorkflowQueueItem } from '@jsams/shared-types';
+import {
+  JsaListFilters,
+  JsaListRibbon,
+  type JsaListSearchField,
+  uniqueJsaListOptions,
+} from './jsa-list-controls';
+import { PublishedJsaPage } from './published-jsa-page';
+import { useRigContext } from './rig-context';
 import { workflowApi } from './workflow-api';
-import './workflow.css';
+import './published-jsa-page.css';
+
 const labels = {
   approvals: 'Needs Approval',
-  pending: 'Pending Approval',
+  pending: 'Pending JSA',
   rejected: 'Rejected JSA',
   published: 'Published JSA',
 };
+
+const updatedAtFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'short',
+  timeStyle: 'short',
+});
+
 export function WorkflowQueuePage({ kind }: { kind: keyof typeof labels }) {
+  if (kind === 'published') return <PublishedJsaPage />;
+  return <StandardWorkflowQueue kind={kind} />;
+}
+
+function StandardWorkflowQueue({ kind }: { kind: Exclude<keyof typeof labels, 'published'> }) {
   const navigate = useNavigate();
+  const { selectedRigId } = useRigContext();
+  const [selectedJsaId, setSelectedJsaId] = useState<string>();
+  const [department, setDepartment] = useState('all');
+  const [keyword, setKeyword] = useState('');
+  const [searchField, setSearchField] = useState<JsaListSearchField>('all');
   const query = useQuery({
-    queryKey: ['workflow-queue', kind],
-    queryFn: () => workflowApi.queue(kind),
+    queryKey: ['workflow-queue', kind, selectedRigId ?? 'all'],
+    queryFn: () => workflowApi.queue(kind, selectedRigId),
+    refetchOnWindowFocus: false,
   });
+  const departmentOptions = useMemo(
+    () =>
+      uniqueJsaListOptions(
+        (query.data ?? []).map((item) => ({
+          value: item.departmentCode,
+          label: `${item.departmentCode} — ${item.departmentName}`,
+        })),
+      ),
+    [query.data],
+  );
+  const filteredItems = useMemo(() => {
+    const term = keyword.trim().toLocaleLowerCase();
+    return (query.data ?? []).filter((item) => {
+      if (department !== 'all' && item.departmentCode !== department) return false;
+      if (!term) return true;
+      const fields: Record<Exclude<JsaListSearchField, 'all'>, string> = {
+        number: item.jsaNumber,
+        job: item.jobTitle ?? '',
+        rig: `${item.rigCode} ${item.rigName}`,
+        department: `${item.departmentCode} ${item.departmentName}`,
+        status: `${item.versionStatus} ${item.currentStepName ?? ''}`,
+      };
+      return searchField === 'all'
+        ? Object.values(fields).some((value) => value.toLocaleLowerCase().includes(term))
+        : fields[searchField].toLocaleLowerCase().includes(term);
+    });
+  }, [department, keyword, query.data, searchField]);
+  const selectedItem = filteredItems.find((item) => item.jsaId === selectedJsaId);
+  const columns = useMemo<ColumnsType<WorkflowQueueItem>>(
+    () => [
+      {
+        title: 'JSA No.',
+        dataIndex: 'jsaNumber',
+        width: 190,
+        sorter: (left, right) => left.jsaNumber.localeCompare(right.jsaNumber),
+      },
+      {
+        title: 'Description',
+        dataIndex: 'jobTitle',
+        width: 300,
+        ellipsis: true,
+        render: (value) => value || '—',
+      },
+      {
+        title: 'Rig',
+        width: 170,
+        ellipsis: true,
+        render: (_, item) => item.rigName,
+      },
+      {
+        title: 'Department',
+        width: 170,
+        ellipsis: true,
+        render: (_, item) => item.departmentName,
+      },
+      {
+        title: 'Status',
+        dataIndex: 'versionStatus',
+        width: 130,
+        render: (value) => <Tag>{value}</Tag>,
+      },
+      {
+        title: 'Current step',
+        dataIndex: 'currentStepName',
+        width: 190,
+        ellipsis: true,
+        render: (value) => value || '—',
+      },
+      {
+        title: 'Updated',
+        dataIndex: 'updatedAt',
+        width: 170,
+        render: (value) => updatedAtFormatter.format(new Date(value)),
+      },
+    ],
+    [],
+  );
+  const openWorkflow = () => {
+    if (selectedItem) navigate(`/jsa/${selectedItem.jsaId}/workflow`);
+  };
+  const openJsa = () => {
+    if (selectedItem) navigate(`/jsa/${selectedItem.jsaId}/draft`);
+  };
+
   return (
-    <main className="workflow-page">
-      <Typography.Text className="eyebrow">JSA WORKFLOW</Typography.Text>
-      <Typography.Title level={1}>{labels[kind]}</Typography.Title>
-      <Typography.Paragraph>
-        Records are filtered by your workflow assignment and governed data scope.
-      </Typography.Paragraph>
-      {query.isLoading ? (
-        <Spin />
-      ) : query.error ? (
-        <Alert type="error" showIcon message="Queue could not be loaded" />
-      ) : (
-        <Card>
-          <Table<WorkflowQueueItem>
-            rowKey="instanceId"
-            dataSource={query.data ?? []}
-            pagination={{ pageSize: 20 }}
-            columns={[
-              {
-                title: kind === 'published' ? 'Official Number' : 'Temporary Number',
-                dataIndex: 'jsaNumber',
-              },
-              { title: 'Job', dataIndex: 'jobTitle', render: (v) => v || '—' },
-              { title: 'Status', dataIndex: 'versionStatus', render: (v) => <Tag>{v}</Tag> },
-              { title: 'Current step', dataIndex: 'currentStepName', render: (v) => v || '—' },
-              {
-                title: 'Updated',
-                dataIndex: 'updatedAt',
-                render: (v) => new Date(v).toLocaleString(),
-              },
-              {
-                title: '',
-                render: (_, r) => (
-                  <Space>
-                    <Button onClick={() => navigate(`/jsa/${r.jsaId}/workflow`)}>Workflow</Button>
-                    <Button onClick={() => navigate(`/jsa/${r.jsaId}/draft`)}>
-                      {kind === 'published' ? 'View JSA' : 'Open JSA'}
-                    </Button>
-                    {kind === 'published' ? (
-                      <Button
-                        type="primary"
-                        onClick={() =>
-                          window.open(`/jsa/${r.jsaId}/print`, '_blank', 'noopener,noreferrer')
-                        }
-                      >
-                        Print
-                      </Button>
-                    ) : null}
-                  </Space>
-                ),
-              },
-            ]}
+    <main className="published-jsa-page">
+      <Typography.Title level={1} className="published-jsa-sr-title">
+        {labels[kind]}
+      </Typography.Title>
+      <JsaListRibbon
+        ariaLabel={`${labels[kind]} operations`}
+        actions={[
+          ...(kind === 'approvals'
+            ? [
+                {
+                  key: 'review',
+                  icon: <FileSearchOutlined />,
+                  label: 'Review JSA',
+                  disabled: !selectedItem,
+                  onClick: openWorkflow,
+                },
+              ]
+            : []),
+          {
+            key: 'view',
+            icon: <FileSearchOutlined />,
+            label: 'View JSA',
+            disabled: !selectedItem,
+            onClick: openJsa,
+          },
+          {
+            key: 'history',
+            icon: <HistoryOutlined />,
+            label: 'Approval history',
+            disabled: !selectedItem,
+            onClick: openWorkflow,
+          },
+        ]}
+      />
+      <section className="published-list" aria-label={`${labels[kind]} list`}>
+        <JsaListFilters
+          department={department}
+          departmentOptions={departmentOptions}
+          keyword={keyword}
+          searchField={searchField}
+          onDepartmentChange={setDepartment}
+          onKeywordChange={setKeyword}
+          onSearchFieldChange={setSearchField}
+        />
+        {query.isLoading ? (
+          <div className="published-list-feedback">
+            <Spin aria-label={`Loading ${labels[kind]}`} />
+          </div>
+        ) : query.error ? (
+          <Alert
+            type="error"
+            showIcon
+            message={`${labels[kind]} could not be loaded`}
+            action={<Button onClick={() => void query.refetch()}>Retry</Button>}
           />
-        </Card>
-      )}
+        ) : (
+          <div className="published-table-scroll">
+            <Table<WorkflowQueueItem>
+              className="published-table"
+              rowKey="instanceId"
+              size="small"
+              tableLayout="fixed"
+              dataSource={filteredItems}
+              columns={columns}
+              pagination={{ pageSize: 25, showSizeChanger: false }}
+              rowSelection={{
+                type: 'radio',
+                selectedRowKeys: selectedItem ? [selectedItem.instanceId] : [],
+                onChange: (_, rows) => setSelectedJsaId(rows[0]?.jsaId),
+                columnWidth: 42,
+              }}
+              onRow={(item) => ({
+                onClick: () => setSelectedJsaId(item.jsaId),
+                onDoubleClick: () =>
+                  navigate(
+                    kind === 'approvals'
+                      ? `/jsa/${item.jsaId}/workflow`
+                      : `/jsa/${item.jsaId}/draft`,
+                  ),
+              })}
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={
+                      query.data?.length
+                        ? `No ${labels[kind]} matches the current filters`
+                        : `No ${labels[kind]} is available`
+                    }
+                  />
+                ),
+              }}
+            />
+          </div>
+        )}
+      </section>
     </main>
   );
 }

@@ -1,5 +1,121 @@
 # Implementation log
 
+## Unified JSA queue workspaces (2026-07-30)
+
+- Applied the Published JSA ribbon, Department filter, keyword/search-field controls, dense selectable table, loading/error/empty states, and responsive horizontal table behavior to Needs Approval, Pending JSA, Rejected JSA, and My Drafts.
+- Added shared `JsaListRibbon` and `JsaListFilters` components so queue action and filter behavior has one governed frontend implementation.
+- Mapped only supported actions: Needs Approval provides Review JSA, View JSA, and Approval history; Pending JSA and Rejected JSA provide View JSA and Approval history; My Drafts provides Continue editing.
+- Removed per-row action buttons from the standardized lists. Users select a row, then invoke the enabled ribbon action; double-click retains the primary open/review shortcut.
+
+## JSA navigation order (2026-07-30)
+
+- Reordered the JSA menu to: Published JSA, Needs Approval, Pending JSA, Rejected JSA, and My Drafts.
+- Renamed the former Pending Approval navigation/page label to Pending JSA while retaining its existing route, governed count, query, and workflow semantics.
+
+## Published JSA Create modal (2026-07-30)
+
+- Removed Create JSA from the application sidebar and replaced the former standalone Create route with a compatibility redirect to Published JSA.
+- Reused the governed Owner Site, Working Rig, Department, and effective Risk Matrix creation form inside an Ant Design modal opened by the Published JSA ribbon.
+- Preserved the existing creation API boundary: only the three ownership identifiers are submitted. After creation, the same modal expands and replaces its ownership form with the complete single-screen Working Version worksheet without changing the Published JSA URL.
+- Extended the draft editor to accept an explicit Draft ID and modal exit callback while preserving its existing route-driven and embedded read-only modes. Save, Cancel, Submit, and Exit retain their established behavior; modal completion returns to the unchanged Published JSA page.
+- Removed the Effective Risk Matrix summary from the ownership-selection step while retaining the underlying Rig matrix query as the creation-readiness guard. The complete worksheet continues to display the applied Matrix.
+- Changed the empty My Drafts action to return users to Published JSA, keeping Published JSA as the single creation entry point.
+
+## Compact Published JSA heading (2026-07-30)
+
+- Removed the visually redundant Published JSA eyebrow, title, and governed-scope description because the selected navigation item already supplies the page context.
+- Retained a visually hidden `h1` so assistive technology still receives the page title without consuming visual layout space.
+- Removed the redundant `Operations of JSA` caption row below the Published JSA action ribbon while retaining the ribbon's accessible region label.
+- Moved the operations ribbon and data controls to the top of the page content.
+- Reused the existing typography, spacing, and surface system while retaining the normal high-contrast text color; no business behavior, responsive breakpoint, shared component, or design-system rule changed.
+
+## Global PV Drilling Tool catalogue (2026-07-30)
+
+- Added the confirmed 53 Tool names in supplied display order at `GLOBAL` scope for Basic Job Step Tool selection across every Site/Rig.
+- Added the required Global `JSA_TOOLS — JSA Tools` Tool Category, stable uppercase Tool codes, an idempotent Oracle seed, an exact verifier, repository commands, and static regressions.
+- Existing active Tools matched by code or exact name retain their `TOOL_ID` and are moved into the governed category/scope; duplicate active scoped matches are soft-deactivated and historical Tool snapshots remain unchanged.
+
+## Global PV Drilling Position catalogue (2026-07-30)
+
+- Added the confirmed 35 Position names in supplied display order at `GLOBAL` scope for Basic Job Step Performer and Supervisor selection across every Site/Rig.
+- Added stable uppercase Position codes, an idempotent Oracle seed, an exact verifier, repository commands, and static data regressions.
+- Existing active rows matched by code or exact name are promoted in place to retain `POSITION_ID`; duplicate active scoped matches are soft-deactivated and historical Position snapshots remain unchanged.
+
+## Global Hazard Assessment Prompt catalogue (2026-07-30)
+
+- Promoted the confirmed 25-item Hazard Assessment Prompt catalogue from `PVD-I` Rig scope to `GLOBAL` scope so every active Rig resolves the same governed checklist.
+- Preserved the existing Prompt IDs by updating the prior Rig-scoped rows in place; the idempotent seed soft-deactivates any duplicate active scoped copies before promotion.
+- Removed the obsolete target-Rig seed requirement and strengthened the real-Oracle verifier to require the exact 25 labels/order at Global scope for all active Rigs.
+- Prompt selections already snapshotted into JSA Versions remain exact historical evidence and are not rewritten.
+
+## Confirmed PV Drilling Department codes (2026-07-30)
+
+- Corrected the ten governed Department codes on every active Rig to `3P`, `DR`, `EL`, `ET`, `ME`, `MAR`, `MED`, `WE`, `CAT`, and `STC`.
+- Updated existing Department rows in place by their previous/current code pair, retaining all 90 `DEPARTMENT_ID` values and dependent relationships rather than creating replacement rows.
+- Updated official-number regression coverage to use the resulting `PV DRILLING V-DR-NNNN` format for Drilling.
+
+## Official JSA number Rig-name segment (2026-07-30)
+
+- Changed initial publication numbering from `<Rig code>-<Department code>-NNNN` to the confirmed `<Rig name>-<Department code>-NNNN` format.
+- Publication now reads the governed `SYS_RIG.RIG_NAME` while retaining the concurrency-safe counter key on the exact Rig/Department identifiers.
+- Official-number immutability, the `0001`–`9999` range, Temporary Draft/approval numbers, and the publication transaction are unchanged.
+- No migration or existing-number rewrite was required; the development JSA dataset and number counter were already empty.
+
+## Rig-scoped PV Drilling Department seed (2026-07-30)
+
+- Added migration 013 and rollback to move Department-code uniqueness from Site scope to exact Site/Rig scope, enabling the same governed Department codes on different Rigs without allowing duplicates within one Rig.
+- Added an idempotent seed and exact Oracle verifier for the confirmed ten-Department catalogue on all nine active Rigs.
+- Preserved and updated the existing `PVD-I / DRILL` Department, then created 89 sequence-owned rows. The development database now contains exactly 90 active Rig-scoped Departments.
+- No JSA, Site, Rig, Matrix, assignment, permission, workflow, attachment-library, or user-scope data changed.
+
+## Development JSA reset and Rig Matrix assignments (2026-07-30)
+
+- Added an explicitly confirmed, non-production-only reset command that removes all development JSA aggregates, workflow instances/tasks/actions, JSA notifications, exact-version attachment associations, and official-number counters without deleting attachment-library assets, master data, Matrix Versions, or Site/Rig records.
+- The reset handles Published test data by temporarily disabling only the allowlisted JSA immutability triggers, commits the cleanup, and restores every trigger in `finally`; the independent verifier requires all 12 triggers to be enabled after execution.
+- Removed 5 JSA Masters, 5 Versions (including 1 Published Version), 1 workflow instance, 5 workflow tasks, 8 workflow actions, 7 notifications/outbox records, 4 attachment associations, and the related authored aggregate rows. The JSA numbering counter was cleared so development numbering restarts from the governed initial value.
+- Effective-ended the prior `PVD-I` assignment and assigned `DEV-5X5 / PVDRILLING-V2` to `PVD-V`. Assigned `PVD-3X3 / V1` to the other seven Offshore Rigs and Onshore `SHOREBASE`, producing exactly one current effective Matrix assignment for every active Rig.
+
+## Confirmed PV Drilling Site/Rig hierarchy seed (2026-07-30)
+
+- Added an idempotent Site/Rig governed-data seed and exact Oracle verifier for the confirmed Offshore and Onshore hierarchy.
+- Corrected the existing `DEV` Site in place to `OFFSHORE` and `DEV-RIG` to `PVD-I / PV DRILLING I`, preserving Site ID `1000000`, Rig ID `1000000`, five JSA records, the existing Department, Matrix assignment history, Hazard Prompt scope, and user data scopes.
+- Created Offshore Rigs `PVD-II`, `PVD-III`, `PVD-V`, `PVD-VI`, `PVD-VIII`, `PVD-IX`, and `PVD-X`, plus the `ONSHORE` Site and its `SHOREBASE` Rig, using source-site Oracle sequences.
+- Updated the local environment identity from `DEV` to `OFFSHORE`. No JSA, workflow history, Matrix Version, Department, permission, role, or data-scope row was deleted or reassigned.
+
+## PV Drilling 3x3 Risk Matrix seed (2026-07-30)
+
+- Added an idempotent governed-data seed and exact Oracle verifier for the independent `PVD-3X3 / V1` Matrix Version based on Procedure Reference `P1.04.09`.
+- Captured the supplied LOW/MED/HIGH Likelihood terminology; LOW/MED/HIGH Severity with separate injury, damage, and pollution definitions; all nine numeric ratings; and the white Acceptable, yellow Tolerable, and red Unacceptable results.
+- Marked Unacceptable as prohibited for Residual Risk. The seed intentionally creates no Rig assignment and does not alter the current `DEV-5X5 / PVDRILLING-V2` assignment.
+
+## Global JSA Working Rig context (2026-07-30)
+
+- Replaced the page-local Published Rig filter with one persistent Working Rig selector in the JSA shell. The selection is stored per application user, prefers the user's governed default Rig, automatically selects a sole governed Rig, and otherwise supports `All governed rigs`.
+- Applied the selected Rig server-side to My Drafts, Needs Approval, Pending Approval, Rejected JSA, Published JSA, and sidebar counts. Existing effective data-scope checks remain mandatory and prevent an arbitrary Rig identifier from widening access.
+- Create JSA now inherits and locks Owner Site/Rig from a selected Working Rig; choosing a Rig from Create while in All-Rigs context updates the global context. Department remains selected within that Rig.
+- Kept Administration outside the JSA Working Rig context because its governed configuration screens already expose explicit scope controls. No schema, migration, JSA ownership transfer, permission, workflow, or lifecycle rule changed.
+
+## JSA sidebar queue counts (2026-07-30)
+
+- Removed the duplicate folder-navigation panel from inside Published JSA; the existing application sidebar remains the single JSA navigation surface.
+- Added governed counts to the outer sidebar labels for My Drafts, Needs Approval, Pending Approval, Rejected JSA, and Published JSA, for example `Published JSA (1)`.
+- Added one compact read-only navigation-count endpoint using the same user ownership, workflow assignment, `CAN_VIEW`, effective-period, Site, Rig, and Department scope rules as the corresponding queues. It counts distinct JSAs without downloading every queue.
+- Count cache is invalidated after create, cancel, submit, approve, return, reject, and comment success. No schema, migration, permission, workflow transition, or JSA lifecycle behavior changed.
+
+## Legacy-familiar Published JSA workspace (2026-07-30)
+
+- Redesigned only the Published JSA page around the confirmed legacy interaction model: a compact JSA operations ribbon, Department filter, keyword field selection, row selection, and a dense sortable Published list. Rig filtering is supplied by the later global JSA Working Rig context.
+- Connected the ribbon exclusively to supported behavior: Create JSA, View JSA, Approval History, and Print JSA. Unsupported legacy features such as Favorite, Translation, Checkout, Delete, and Download Blank were not represented as working actions.
+- Extended the existing governed workflow queue read model with Site, Rig, Department, publication timestamp, and final publishing username already stored in Oracle. No table, migration, write behavior, permission, workflow rule, or Published immutability rule changed.
+- Preserved responsive access through horizontally reachable ribbon/table content, a stacked mobile folder/filter layout, keyboard focus treatment, textual labels, radio row selection, double-click viewing, and reduced-motion handling.
+
+## JSA and Administration navigation areas (2026-07-30)
+
+- Renamed the application shell's top-level `Browse` area to `JSA` and `Operations` area to `Administration`, including matching sidebar section labels and mobile navigation behavior.
+- Removed the placeholder Browse Home page. Root, post-login, create-cancel, and recovery navigation now lead to `My Drafts`; the legacy `/browse` URL redirects there without rendering the removed placeholder.
+- Moved System Health into Administration at `/operations/system-health`; the legacy `/system/health` URL redirects to the new route.
+- Top-level tab selection now opens the first destination the signed-in user can actually access in that area instead of assuming Security Administration permission. Existing permission enforcement and JSA capability guards remain unchanged.
+
 ## Print Hazard Prompt checkbox borders (2026-07-30)
 
 - Restored the bordered selection cell for every Hazard Assessment Prompt in the Published JSA print form, including unselected prompts, so the `X` marker and prompt label render as distinct legacy-form columns.
