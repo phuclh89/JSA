@@ -16,6 +16,10 @@ Migration 009 enforces matching Initial and Residual Severity. It fails closed w
 
 Migration 010 requires exactly one active English language record with code `EN`. It fails closed for missing/ambiguous English configuration, existing non-English source versions, or Published versions with no language. New JSA creation then resolves English server-side and does not accept Language or Job Type from the client. Its rollback is intentionally blocked after unclassified JSA Versions exist until an approved remediation restores Job Type values.
 
+Migration 018 creates Translation schema objects only. Set all five `JSA_PERMISSION_TRANSLATION_*`/`JSA_PERMISSION_TRANSLATE` mappings, keep `JSA_PERMISSION_VIEW` configured, and provide governed OIM, TRANSLATOR, and STC workflow-role assignments plus ACT/VIEW scope. Production must provide active non-English target languages; migration 018 does not seed them.
+
+After apply, set `PHASE7_BOOTSTRAP_ACTOR` and run `pnpm db:bootstrap:phase7` to register and position only the three Translation sequences in the approved local Site range. Run `pnpm db:verify:phase7`; its fixture is transaction-isolated and rolled back. Replacement publication atomically outdates affected Translations, so migration 018 must be deployed before enabling replacement approval code that calls this integration.
+
 ## Phase 1 site and security bootstrap
 
 Migration 002 creates schema objects only. It intentionally does not invent final site IDs, numeric ranges, or enterprise identities. Before the first operational login, an authorized deployment owner must provide:
@@ -141,3 +145,23 @@ For development/UAT only, `pnpm db:seed:uat-full-approval` creates the missing `
 After migration 007, set `LOCAL_SITE_ID` and `PHASE45_BOOTSTRAP_ACTOR`, then run `pnpm db:bootstrap:phase45`. The bootstrap configures only `SEQ_SYS_ACCESS_ADMIN_AUDIT` inside the existing approved Site range. It never creates a user, enterprise identity, Role, Permission, assignment, scope, workflow definition/binding, or approver.
 
 All access-administration APIs require effective `SYSTEM_ADMIN` and governed ACT scope for managed Site/Rig/Department context. `SYSTEM_ADMIN` remains independent from JSA approval Permission, workflow Role, current assignee, document state, and owner-site rules. Before production access UAT, use the Approver Resolution and Approval UAT Readiness screens against approved real identities/configuration. Do not interpret isolated fixtures, outbox persistence, or a successful admin login as authenticated multi-account approval readiness.
+
+## Phase 5 revision permissions and rollout
+
+Configure all three mappings together: `JSA_PERMISSION_UPDATE`, `JSA_PERMISSION_COMPARE`, and `JSA_PERMISSION_UNDO_CHECKOUT`. If any mapping is absent, every Phase 5 privileged capability fails closed. The mapped Permission codes must exist in governed security data; Update, Compare/History, and privileged Undo Checkout remain independent from workflow Role, current assignment, data scope, and owner-site checks.
+
+Apply migrations 014 and 015 in order, then run `pnpm db:status`, `pnpm db:verify`, and `pnpm db:verify:phase5`. No sequence bootstrap or production seed is required. Before production enablement, verify an approved Published fixture through checkout, Working edit, Base comparison, approval replacement, operational current read/print, and Superseded immutability. The Phase 5 verifier reports the publication-transition behavior as skipped when the target contains no Published fixture.
+
+## Phase 6 Browse/Search and Favorites rollout
+
+Configure `JSA_PERMISSION_FAVORITE` to an approved existing Permission code. Production startup fails closed when it is absent. Migration 016 intentionally does not create or grant a speculative Permission; grants and explicit overrides remain governed through access administration.
+
+After migration 016, set `LOCAL_SITE_ID` and `PHASE6_BOOTSTRAP_ACTOR`, run `pnpm db:bootstrap:phase6`, then run `pnpm db:verify` and `pnpm db:verify:phase6`. The bootstrap positions/registers only `SEQ_JSA_USER_FAVORITE` and refuses partial configuration. Before multi-site enablement, approve an authoritative-site or conflict-resolution rule for simultaneous replicated preference writes.
+
+## Phase 6C Cross-Rig Copy rollout
+
+Configure `JSA_PERMISSION_COPY` to an approved existing Permission code independently from `JSA_PERMISSION_VIEW` and `JSA_PERMISSION_CREATE`. Production startup fails closed when any mapping is absent. Migration 017 deliberately creates no Permission or grant.
+
+Set `LOCAL_SITE_ID` to the destination authoritative Site and `PHASE6C_BOOTSTRAP_ACTOR` to an approved operational identity, then run `pnpm db:bootstrap:phase6c`, `pnpm db:verify`, and `pnpm db:verify:phase6c`. Confirm destination Rig/Department hierarchy, effective complete Rig Matrix assignments, English language, stable prompt/position/tool codes, and applicable VIEW/ACT scopes before enablement.
+
+Current conservative implementation limitations are intentional safety boundaries, not newly confirmed business policy: destination Site is local-only, source must be Current Published, source and destination Rigs must differ, missing/ambiguous Position or Tool mappings block, prompt gaps warn, different Matrix Versions clear all risk, and attachments/procedures/workflow/favorites/notifications are excluded. GoldenGate must replicate provenance metadata and sequence ranges remain Site-partitioned; attachment binaries stay outside this feature.

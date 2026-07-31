@@ -58,6 +58,7 @@ describe('JsaWorkflowService', () => {
   const scopes = { allows: jest.fn(() => true) };
   const config = { get: jest.fn(() => 'test') };
   const audit = { recordRequired: jest.fn() };
+  const versioning = { compare: jest.fn() };
   const service = new JsaWorkflowService(
     oracle as never,
     repository as unknown as JsaWorkflowRepository,
@@ -65,6 +66,7 @@ describe('JsaWorkflowService', () => {
     scopes as never,
     config as never,
     audit as never,
+    versioning as never,
   );
   beforeEach(() => {
     jest.clearAllMocks();

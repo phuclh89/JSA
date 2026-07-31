@@ -2,6 +2,9 @@ import {
   FileAddOutlined,
   FileTextOutlined,
   GlobalOutlined,
+  TranslationOutlined,
+  HeartOutlined,
+  UnorderedListOutlined,
   MenuOutlined,
   UserOutlined,
 } from '@ant-design/icons';
@@ -28,6 +31,8 @@ import './app-shell.css';
 import { jsaApi } from '../../features/jsa/jsa-api';
 import { workflowApi } from '../../features/jsa/workflow-api';
 import { useRigContext } from '../../features/jsa/rig-context';
+import { browseApi } from '../../features/jsa/browse-api';
+import { translationApi } from '../../features/jsa/translation-api';
 
 const { Header, Sider, Content } = Layout;
 export function AppShell() {
@@ -49,6 +54,24 @@ export function AppShell() {
     queryFn: () => workflowApi.navigationCounts(selectedRigId),
     enabled: workflowCapabilities.data?.view === true,
   });
+  const browseCapabilities = useQuery({
+    queryKey: ['jsa-browse-capabilities'],
+    queryFn: browseApi.capabilities,
+  });
+  const browseCounts = useQuery({
+    queryKey: ['jsa-browse-counts', selectedRigId ?? 'all'],
+    queryFn: () => browseApi.counts(selectedRigId),
+    enabled: workflowCapabilities.data?.view === true,
+  });
+  const translationCapabilities = useQuery({
+    queryKey: ['translation-capabilities'],
+    queryFn: translationApi.capabilities,
+  });
+  const translationCounts = useQuery({
+    queryKey: ['translation-counts'],
+    queryFn: translationApi.counts,
+    enabled: translationCapabilities.data?.view === true,
+  });
   const items = useMemo(
     () => [
       ...navigationItems.filter((item) => user?.permissions.includes(item.permission)),
@@ -60,6 +83,24 @@ export function AppShell() {
               permission: '',
               area: 'jsa' as const,
               icon: <FileAddOutlined />,
+            },
+            ...(browseCapabilities.data?.favorite
+              ? [
+                  {
+                    key: '/jsa/favorites',
+                    label: withCount('My Favorites', browseCounts.data?.favorites),
+                    permission: '',
+                    area: 'jsa' as const,
+                    icon: <HeartOutlined />,
+                  },
+                ]
+              : []),
+            {
+              key: '/jsa/all',
+              label: withCount('All JSAs', browseCounts.data?.all),
+              permission: '',
+              area: 'jsa' as const,
+              icon: <UnorderedListOutlined />,
             },
             {
               key: '/jsa/approvals',
@@ -95,6 +136,21 @@ export function AppShell() {
             },
           ]
         : []),
+      ...(translationCapabilities.data?.view
+        ? [
+            {
+              key: '/jsa/translations',
+              label: withCount(
+                'Translations',
+                (translationCounts.data?.translationTasks ?? 0) +
+                  (translationCounts.data?.translationReviews ?? 0),
+              ),
+              permission: '',
+              area: 'jsa' as const,
+              icon: <TranslationOutlined />,
+            },
+          ]
+        : []),
       ...(workflowCapabilities.data?.admin
         ? [
             {
@@ -113,6 +169,10 @@ export function AppShell() {
       workflowCapabilities.data?.view,
       workflowCapabilities.data?.admin,
       navigationCounts.data,
+      browseCapabilities.data?.favorite,
+      browseCounts.data,
+      translationCapabilities.data?.view,
+      translationCounts.data,
     ],
   );
   const area = location.pathname.startsWith('/operations') ? 'administration' : 'jsa';

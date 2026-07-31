@@ -413,6 +413,9 @@ The following are confirmed:
 56. The confirmed Department codes are `3P`, `DR`, `EL`, `ET`, `ME`, `MAR`, `MED`, `WE`, `CAT`, and `STC`, mapped respectively to Third Party, Drilling, Electrician, Electronics, Mechanic, Marine, Medic, Welder, Catering, and STC. Existing Department identities are retained when these governed codes are corrected.
 57. The confirmed 35-item Position catalogue is governed once at Global scope and is available to every Site and Rig for Basic Job Step Performer and Supervisor selection. Existing Position identities are retained when matching scoped records are promoted to Global.
 58. The confirmed 53-item Tool catalogue and its `JSA Tools` category are governed once at Global scope and are available to every Site and Rig for Basic Job Step Tool selection. Existing Tool identities are retained when matching scoped records are promoted to Global.
+59. Browse and Search returns only JSA Masters and Versions that the actor can already view through effective permission and Site/Rig/Department data scope. Working Rig narrows results but never grants visibility. Published and Favorites always represent the exact Current Published Version; Working content appears in All JSAs only through the actor's independent owner or current-assignee visibility.
+60. A Favorite is a user-specific, Master-level preference for a JSA whose exact Current Version is Published. Favorite and Unfavorite are idempotent soft-state changes, do not alter the JSA or its Versions, do not grant access, and cease to appear whenever permission, data scope, or Current Published eligibility no longer passes.
+61. Searchable JSA content is JSA Number, Job Title, Task, Hazard, Control, selected Hazard Assessment Prompt, Creator, and Approver/Publisher identity. Removed authoring fields, Prompt coverage, and Procedure References are not primary search fields.
 
 ## 21. Open business decisions
 
@@ -438,6 +441,7 @@ The following require explicit business confirmation before implementation:
 - workflow-role assignment ownership and approval;
 - watermarking, completed signature handling, copy controls, offline validity, and print-audit retention;
 - final site identifiers, non-overlapping sequence ranges, and GoldenGate conflict resolution;
+- authoritative-site and conflict-resolution rules for the same user's replicated Favorite preference;
 - attachment binary synchronization SLA, monitoring ownership, retention, backup/restore, malware scanning, and recovery when metadata exists before the synchronized binary;
 - data retention, archival, legal hold, and physical-deletion exceptions.
 

@@ -2,13 +2,23 @@ import { SearchOutlined } from '@ant-design/icons';
 import { Button, Input, Select } from 'antd';
 import type { ReactNode } from 'react';
 
-export type JsaListSearchField = 'all' | 'number' | 'job' | 'rig' | 'department' | 'status';
+export type JsaListSearchField =
+  | 'ALL'
+  | 'JSA_NUMBER'
+  | 'JOB_TITLE'
+  | 'TASK'
+  | 'HAZARD'
+  | 'CONTROL'
+  | 'PROMPT'
+  | 'CREATOR'
+  | 'APPROVER';
 
 export interface JsaListAction {
   key: string;
   icon: ReactNode;
   label: string;
   disabled?: boolean;
+  disabledReason?: string;
   onClick: () => void;
 }
 
@@ -28,6 +38,12 @@ export function JsaListRibbon({
             className="published-ribbon-action"
             type="text"
             disabled={action.disabled}
+            title={action.disabled ? action.disabledReason : undefined}
+            aria-label={
+              action.disabled && action.disabledReason
+                ? `${action.label}. Unavailable: ${action.disabledReason}`
+                : action.label
+            }
             onClick={action.onClick}
           >
             <span aria-hidden="true">{action.icon}</span>
@@ -82,12 +98,15 @@ export function JsaListFilters({
           value={searchField}
           onChange={onSearchFieldChange}
           options={[
-            { value: 'all', label: 'All fields' },
-            { value: 'number', label: 'JSA Number' },
-            { value: 'job', label: 'Description' },
-            { value: 'rig', label: 'Rig' },
-            { value: 'department', label: 'Department' },
-            { value: 'status', label: 'Status' },
+            { value: 'ALL', label: 'All searchable content' },
+            { value: 'JSA_NUMBER', label: 'JSA Number' },
+            { value: 'JOB_TITLE', label: 'Job Title' },
+            { value: 'TASK', label: 'Task' },
+            { value: 'HAZARD', label: 'Hazard' },
+            { value: 'CONTROL', label: 'Control' },
+            { value: 'PROMPT', label: 'Hazard Prompt' },
+            { value: 'CREATOR', label: 'Creator' },
+            { value: 'APPROVER', label: 'Approver / Publisher' },
           ]}
         />
       </label>

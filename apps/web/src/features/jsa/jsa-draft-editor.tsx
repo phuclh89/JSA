@@ -37,7 +37,7 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type {
   JsaDraftBasicStep,
   JsaDraftDetail,
@@ -50,12 +50,16 @@ import type {
   AttachmentLibraryFolder,
   MasterDataRecord,
   RiskAxisLevel,
+  JsaVersionChange,
 } from '@jsams/shared-types';
 import type { ApiClientError } from '../../services/api-client';
 import { jsaApi } from './jsa-api';
 import { workflowApi } from './workflow-api';
 import { ApprovalProgress } from './approval-progress';
 import { ApprovalHistory } from './approval-history';
+import { VersionComparePanel } from './version-compare-panel';
+import { versioningApi } from './versioning-api';
+import { CopyProvenancePanel } from './copy-provenance-panel';
 import './jsa-draft.css';
 
 const fresh = () => `new-${crypto.randomUUID()}`;
@@ -67,27 +71,64 @@ const meta = (value: { id: string; rowVersion: string }) => ({
 
 type DraftUpdater = (fn: (draft: JsaDraftDetail) => JsaDraftDetail) => void;
 type PickerKind = 'performers' | 'supervisors' | 'tools';
+type ChangeMap = Map<string, JsaVersionChange>;
+type MarkDeleted = (
+  entityType: string,
+  logicalKey: string,
+  label: string,
+  oldPosition?: string,
+  values?: Record<string, string | number | boolean | null | undefined>,
+) => void;
 
+const changeKey = (entityType: string, logicalKey: string) => `${entityType}:${logicalKey}`;
+const changeFor = (changes: ChangeMap, entityType: string, logicalKey: string) =>
+  logicalKey ? changes.get(changeKey(entityType, logicalKey)) : undefined;
+const changed = (change: JsaVersionChange | undefined, fields?: string[]) =>
+  Boolean(
+    change &&
+      change.changeType !== 'UNCHANGED' &&
+      change.changeType !== 'DELETED' &&
+      change.changeType !== 'ADDED' &&
+      (change.changeType !== 'MODIFIED' ||
+        !fields ||
+        change.fields.some((field) => fields.includes(field.field))),
+  );
+const changedClass = (change: JsaVersionChange | undefined, fields?: string[]) =>
+  changed(change, fields) ? ' worksheet-cell--changed' : '';
+const added = (change: JsaVersionChange | undefined, id: string) =>
+  !persisted(id) || change?.changeType === 'ADDED';
+const deletedChanges = (changes: ChangeMap, types: string[]) =>
+  [...changes.values()].filter(
+    (change) => change.changeType === 'DELETED' && types.includes(change.entityType),
+  );
 export function JsaDraftEditor({
   embedded = false,
   forceReadOnly = false,
+  reviewComparison = false,
   draftId,
   onExit,
 }: {
   embedded?: boolean;
   forceReadOnly?: boolean;
+  reviewComparison?: boolean;
   draftId?: string;
   onExit?: () => void;
 } = {}) {
   const { id: routeId = '' } = useParams();
   const id = draftId ?? routeId;
+  const [searchParams] = useSearchParams();
+  const currentSource = !embedded && searchParams.get('source') === 'current';
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ['jsa-draft', id], queryFn: () => jsaApi.detail(id) });
+  const query = useQuery({
+    queryKey: ['jsa-draft', id, currentSource ? 'current' : 'working'],
+    queryFn: () => (currentSource ? jsaApi.currentDetail(id) : jsaApi.detail(id)),
+  });
   const [draft, setDraft] = useState<JsaDraftDetail>();
   const [dirty, setDirty] = useState(false);
   const [validation, setValidation] = useState<JsaValidationResult>();
   const [saveError, setSaveError] = useState<ApiClientError>();
+  const [localDeleted, setLocalDeleted] = useState<ChangeMap>(new Map());
   const workflowPreview = useQuery({
     queryKey: ['workflow-preview', id],
     queryFn: () => workflowApi.preview(id),
@@ -97,6 +138,65 @@ export function JsaDraftEditor({
     queryKey: ['workflow-detail', id],
     queryFn: () => workflowApi.detail(id),
     enabled: query.data?.versionStatus === 'RETURNED' && !embedded,
+  });
+  const versioningCapabilities = useQuery({
+    queryKey: ['jsa-versioning-capabilities'],
+    queryFn: versioningApi.capabilities,
+    enabled: Boolean(id),
+  });
+  const comparison = useQuery({
+    queryKey: ['jsa-version-compare', id, reviewComparison],
+    queryFn: () =>
+      reviewComparison ? versioningApi.reviewCompare(id) : versioningApi.compare(id),
+    enabled: Boolean(query.data?.baseVersionId) && (!embedded || reviewComparison),
+  });
+  const serverChanges = useMemo(
+    () =>
+      new Map(
+        (comparison.data?.changes ?? []).map((change) => [
+          changeKey(change.entityType, change.logicalKey),
+          change,
+        ]),
+      ),
+    [comparison.data],
+  );
+  const changes = useMemo(
+    () => new Map([...serverChanges.entries(), ...localDeleted.entries()]),
+    [localDeleted, serverChanges],
+  );
+  const markDeleted: MarkDeleted = (entityType, logicalKey, label, oldPosition, values = {}) => {
+    if (
+      !query.data?.baseVersionId ||
+      !logicalKey ||
+      changeFor(serverChanges, entityType, logicalKey)?.changeType === 'ADDED'
+    )
+      return;
+    const change: JsaVersionChange = {
+      entityType,
+      logicalKey,
+      changeType: 'DELETED',
+      label,
+      fields: Object.entries(values).map(([field, oldValue]) => ({
+        field,
+        oldValue: oldValue ?? null,
+        newValue: null,
+      })),
+      ...(oldPosition ? { oldPosition } : {}),
+    };
+    setLocalDeleted((current) => new Map(current).set(changeKey(entityType, logicalKey), change));
+  };
+  useEffect(() => setLocalDeleted(new Map()), [id]);
+  const undoCheckout = useMutation({
+    mutationFn: () => versioningApi.undo(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workflow-queue'] });
+      void queryClient.invalidateQueries({ queryKey: ['jsa-drafts'] });
+      void queryClient.invalidateQueries({ queryKey: ['jsa-browse'] });
+      void queryClient.invalidateQueries({ queryKey: ['jsa-navigation-counts'] });
+      message.success('Checkout was undone. The Current Published Version was not changed.');
+      navigate('/jsa/published');
+    },
+    onError: (error) => message.error((error as ApiClientError).message),
   });
 
   useEffect(() => {
@@ -142,6 +242,7 @@ export function JsaDraftEditor({
       setDirty(false);
       setSaveError(undefined);
       void queryClient.invalidateQueries({ queryKey: ['jsa-draft', id] });
+      void queryClient.invalidateQueries({ queryKey: ['jsa-version-compare', id] });
       message.success('JSA draft saved');
     },
     onError: (error) => {
@@ -234,6 +335,7 @@ export function JsaDraftEditor({
           setDraft(result.data);
           setDirty(false);
           setSaveError(undefined);
+          setLocalDeleted(new Map());
           message.success('Latest Draft loaded');
         }
       },
@@ -249,12 +351,30 @@ export function JsaDraftEditor({
     : undefined;
   const worksheet = (
     <>
-      <GeneralSection draft={draft} disabled={disabled} update={update} />
-      <PromptSection draft={draft} disabled={disabled} update={update} />
+      <GeneralSection draft={draft} disabled={disabled} update={update} changes={changes} />
+      <PromptSection draft={draft} disabled={disabled} update={update} changes={changes} />
       <RiskReferenceSection draft={draft} />
-      <TaskRiskSection draft={draft} disabled={disabled} update={update} />
-      <BasicStepSection draft={draft} disabled={disabled} update={update} />
-      <ReferenceAttachmentSection draft={draft} disabled={disabled} update={update} />
+      <TaskRiskSection
+        draft={draft}
+        disabled={disabled}
+        update={update}
+        changes={changes}
+        markDeleted={markDeleted}
+      />
+      <BasicStepSection
+        draft={draft}
+        disabled={disabled}
+        update={update}
+        changes={changes}
+        markDeleted={markDeleted}
+      />
+      <ReferenceAttachmentSection
+        draft={draft}
+        disabled={disabled}
+        update={update}
+        changes={changes}
+        markDeleted={markDeleted}
+      />
       <ValidationSection result={validation} />
     </>
   );
@@ -273,11 +393,25 @@ export function JsaDraftEditor({
     <main className="jsa-editor jsa-worksheet">
       <header className="jsa-editor-heading">
         <div>
-          <Typography.Text className="eyebrow">CREATE JSA · WORKING VERSION</Typography.Text>
+          <Typography.Text className="eyebrow">
+            {draft.baseVersionId
+              ? 'UPDATE JSA · WORKING VERSION'
+              : draft.versionStatus === 'PUBLISHED'
+                ? 'CURRENT PUBLISHED JSA'
+                : 'CREATE JSA · WORKING VERSION'}
+          </Typography.Text>
           <Typography.Title level={1}>{draft.jsaNumber}</Typography.Title>
           <Space wrap>
-            <Tag color={draft.versionStatus === 'DRAFT' ? 'lime' : 'orange'}>
-              {draft.versionStatus}
+            <Tag color={draft.versionStatus === 'PUBLISHED' ? 'green' : 'orange'}>
+              Official: {draft.lifecycleStatus}
+            </Tag>
+            <Tag>
+              Update:{' '}
+              {draft.baseVersionId
+                ? draft.versionStatus
+                : draft.workingVersionStatus
+                  ? `IN PROGRESS · ${draft.workingVersionStatus}`
+                  : 'NONE'}
             </Tag>
             <Tag>
               {draft.matrix.matrixCode} / {draft.matrix.versionCode} · {draft.matrix.dimension}×
@@ -304,9 +438,52 @@ export function JsaDraftEditor({
             >
               Save Draft
             </Button>
+            {draft.baseVersionId &&
+            draft.versionStatus === 'DRAFT' &&
+            versioningCapabilities.data?.undoCheckout ? (
+              <Button
+                danger
+                loading={undoCheckout.isPending}
+                onClick={() =>
+                  Modal.confirm({
+                    title: 'Undo Checkout',
+                    content:
+                      'All changes in this unsubmitted Working Version will be discarded. The Current Published Version will remain unchanged and this JSA will become available for checkout again.',
+                    okText: 'Undo Checkout',
+                    okButtonProps: { danger: true },
+                    onOk: () => undoCheckout.mutateAsync(),
+                  })
+                }
+              >
+                Undo Checkout
+              </Button>
+            ) : null}
           </Space>
         ) : null}
       </header>
+
+      <CopyProvenancePanel jsaId={id} />
+
+      {draft.baseVersionId && draft.checkedOutAt ? (
+        <Alert
+          type="info"
+          showIcon
+          message={`Checked out by ${draft.checkedOutByDisplayName || draft.checkedOutByUsername || 'an authorized user'}`}
+          description={`Checkout time: ${new Date(draft.checkedOutAt).toLocaleString()}. Base Version ID: ${draft.baseVersionId}.`}
+        />
+      ) : null}
+
+      {draft.baseVersionId &&
+      draft.tasks.some((task) =>
+        task.hazards.some((hazard) => !hazard.initialRisk.cellId || !hazard.residualRisk.cellId),
+      ) ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="Matrix reassessment required"
+          description="The effective Matrix changed or risk assessment is incomplete. Reassess every Hazard before submission."
+        />
+      ) : null}
 
       <ApprovalProgress
         versionStatus={draft.versionStatus}
@@ -362,6 +539,31 @@ export function JsaDraftEditor({
       )}
 
       {worksheet}
+
+      {draft.baseVersionId && versioningCapabilities.data?.compare ? (
+        <VersionComparePanel
+          jsaId={id}
+          defaultCollapsed
+          legend={
+            comparison.data ? (
+              <div className="worksheet-change-legend" role="note">
+                <span>
+                  <i className="worksheet-change-swatch worksheet-change-swatch--added" />
+                  Added since the Published Version
+                </span>
+                <span>
+                  <i className="worksheet-change-swatch worksheet-change-swatch--changed" />
+                  Changed since the Published Version
+                </span>
+                <span>
+                  <i className="worksheet-change-swatch worksheet-change-swatch--deleted" />
+                  Deleted from the Published Version
+                </span>
+              </div>
+            ) : null
+          }
+        />
+      ) : null}
 
       <footer className="worksheet-footer">
         <div>
@@ -439,15 +641,30 @@ function SectionTitle({
   );
 }
 
+function DeletedReference({ change }: { change: JsaVersionChange }) {
+  return (
+    <div
+      className="worksheet-deleted-reference"
+      aria-label={`Deleted ${change.entityType}: ${change.label}`}
+    >
+      <Tag color="default">Deleted {change.entityType.replaceAll('_', ' ')}</Tag>
+      <del>{change.label || 'Unnamed item'}</del>
+    </div>
+  );
+}
+
 function GeneralSection({
   draft,
   disabled,
   update,
+  changes,
 }: {
   draft: JsaDraftDetail;
   disabled: boolean;
   update: DraftUpdater;
+  changes: ChangeMap;
 }) {
+  const header = changeFor(changes, 'HEADER', 'HEADER');
   const field = <K extends keyof JsaDraftDetail>(name: K, value: JsaDraftDetail[K]) =>
     update((current) => ({ ...current, [name]: value }));
   return (
@@ -466,25 +683,25 @@ function GeneralSection({
           <span>Temporary JSA Number</span>
           <strong className="worksheet-readonly-value">{draft.jsaNumber}</strong>
         </div>
-        <div className="worksheet-readonly-field">
+        <div className={`worksheet-readonly-field${changedClass(header, ['ownerSiteId'])}`}>
           <span>Owner Site</span>
           <strong className="worksheet-readonly-value">
             {draft.ownerSiteCode} — {draft.ownerSiteName}
           </strong>
         </div>
-        <div className="worksheet-readonly-field">
+        <div className={`worksheet-readonly-field${changedClass(header, ['rigId'])}`}>
           <span>Rig</span>
           <strong className="worksheet-readonly-value">
             {draft.rigCode} — {draft.rigName}
           </strong>
         </div>
-        <div className="worksheet-readonly-field">
+        <div className={`worksheet-readonly-field${changedClass(header, ['departmentId'])}`}>
           <span>Department</span>
           <strong className="worksheet-readonly-value">
             {draft.departmentCode} — {draft.departmentName}
           </strong>
         </div>
-        <label className="span-2">
+        <label className={`span-2${changedClass(header, ['jobTitle'])}`}>
           <span>Job Title *</span>
           <Input
             readOnly={disabled}
@@ -501,10 +718,12 @@ function PromptSection({
   draft,
   disabled,
   update,
+  changes,
 }: {
   draft: JsaDraftDetail;
   disabled: boolean;
   update: DraftUpdater;
+  changes: ChangeMap;
 }) {
   const suffix = `?siteId=${draft.ownerSiteId}&rigId=${draft.rigId}&departmentId=${draft.departmentId}`;
   const options = useQuery({
@@ -538,6 +757,7 @@ function PromptSection({
       id: `prompt-option-${record.id}`,
       label: record.name,
       selected: Boolean(draft.prompts.find((item) => item.promptId === record.id && item.selected)),
+      logicalKey: draft.prompts.find((item) => item.promptId === record.id)?.logicalKey ?? '',
     })),
     ...draft.prompts
       .filter((item) => item.selected && !currentPromptIds.has(item.promptId))
@@ -545,6 +765,7 @@ function PromptSection({
         id: `prompt-snapshot-${item.id}`,
         label: item.label,
         selected: true,
+        logicalKey: item.logicalKey,
       })),
   ];
   return (
@@ -562,7 +783,10 @@ function PromptSection({
           <div className="prompt-grid prompt-grid--readonly">
             {readonlyPrompts.map((prompt) => (
               <div
-                className={`prompt-readonly-item${prompt.selected ? ' prompt-readonly-item--selected' : ''}`}
+                className={`prompt-readonly-item${prompt.selected ? ' prompt-readonly-item--selected' : ''}${changedClass(
+                  changeFor(changes, 'PROMPT', prompt.logicalKey),
+                  ['selected', 'responseNote'],
+                )}`}
                 key={prompt.id}
               >
                 <span
@@ -590,9 +814,13 @@ function PromptSection({
         <div className="prompt-grid">
           {(options.data ?? []).map((record) => {
             const prompt = draft.prompts.find((item) => item.promptId === record.id);
+            const promptChange = changeFor(changes, 'PROMPT', prompt?.logicalKey ?? '');
             return (
               <div
-                className={`prompt-item${prompt?.selected ? ' prompt-item-selected' : ''}`}
+                className={`prompt-item${prompt?.selected ? ' prompt-item-selected' : ''}${changedClass(
+                  promptChange,
+                  ['selected', 'responseNote'],
+                )}`}
                 key={record.id}
               >
                 <Checkbox
@@ -607,6 +835,9 @@ function PromptSection({
           })}
         </div>
       )}
+      {deletedChanges(changes, ['PROMPT']).map((change) => (
+        <DeletedReference key={changeKey(change.entityType, change.logicalKey)} change={change} />
+      ))}
     </section>
   );
 }
@@ -749,10 +980,14 @@ function TaskRiskSection({
   draft,
   disabled,
   update,
+  changes,
+  markDeleted,
 }: {
   draft: JsaDraftDetail;
   disabled: boolean;
   update: DraftUpdater;
+  changes: ChangeMap;
+  markDeleted: MarkDeleted;
 }) {
   const resequence = (tasks: JsaDraftTask[]) =>
     tasks.map((task, index) => ({
@@ -782,16 +1017,77 @@ function TaskRiskSection({
       tasks.splice(index + 1, 0, newTask());
       return { ...current, tasks: resequence(tasks) };
     });
-  const removeTaskById = (taskId: string) =>
+  const preserveDeletedTask = (task: JsaDraftTask) => {
+    markDeleted(
+      'TASK',
+      task.logicalKey,
+      task.title || `Task ${task.number ?? ''}`,
+      `ROOT:${task.displayOrder}`,
+      { number: task.number, title: task.title, description: task.description },
+    );
+    task.hazards.forEach((hazard) => {
+      markDeleted(
+        'HAZARD',
+        hazard.logicalKey,
+        hazard.text || 'Unnamed hazard',
+        `${task.logicalKey}:${hazard.displayOrder}`,
+        {
+          text: hazard.text,
+          initialLikelihoodId: hazard.initialRisk.likelihoodId,
+          initialSeverityId: hazard.initialRisk.severityId,
+          initialRatingCode: hazard.initialRisk.ratingCode,
+          initialResultCode: hazard.initialRisk.resultCode,
+          residualLikelihoodId: hazard.residualRisk.likelihoodId,
+          residualSeverityId:
+            hazard.residualRisk.severityId ?? hazard.initialRisk.severityId,
+          residualRatingCode: hazard.residualRisk.ratingCode,
+          residualResultCode: hazard.residualRisk.resultCode,
+        },
+      );
+      hazard.controls.forEach((control) =>
+        markDeleted(
+          'CONTROL',
+          control.logicalKey,
+          control.text || 'Unnamed control',
+          `${hazard.logicalKey}:${control.displayOrder}`,
+          { text: control.text },
+        ),
+      );
+    });
+  };
+  const removeTask = (task: JsaDraftTask) => {
+    preserveDeletedTask(task);
     update((current) => ({
       ...current,
-      tasks: resequence(current.tasks.filter((item) => item.id !== taskId)),
+      tasks: current.tasks.filter((item) => item.id !== task.id),
     }));
+  };
   const setTask = (task: JsaDraftTask) =>
     update((current) => ({
       ...current,
       tasks: current.tasks.map((item) => (item.id === task.id ? task : item)),
     }));
+  const taskTimeline: Array<
+    | { kind: 'active'; task: JsaDraftTask }
+    | { kind: 'deleted'; change: JsaVersionChange }
+  > = draft.tasks
+    .slice()
+    .sort((left, right) => left.displayOrder - right.displayOrder)
+    .map((task) => ({ kind: 'active' as const, task }));
+  deletedChanges(changes, ['TASK'])
+    .slice()
+    .sort(
+      (left, right) =>
+        Number(left.oldPosition?.split(':').at(-1) ?? 0) -
+        Number(right.oldPosition?.split(':').at(-1) ?? 0),
+    )
+    .forEach((change) => {
+      const oldIndex = Math.max(0, Number(change.oldPosition?.split(':').at(-1) ?? 1) - 1);
+      taskTimeline.splice(Math.min(oldIndex, taskTimeline.length), 0, {
+        kind: 'deleted',
+        change,
+      });
+    });
   return (
     <section className="worksheet-section">
       <SectionTitle
@@ -842,45 +1138,96 @@ function TaskRiskSection({
             </tr>
           </thead>
           <tbody>
-            {draft.tasks.length === 0 && (
+            {taskTimeline.length === 0 && (
               <tr>
                 <td colSpan={disabled ? 10 : 11} className="worksheet-empty">
                   {disabled ? 'No Task recorded.' : 'No Task yet. Select “Add Task” to begin.'}
                 </td>
               </tr>
             )}
-            {draft.tasks.flatMap((task, taskIndex) => {
+            {taskTimeline.flatMap((entry, taskIndex) => {
+              if (entry.kind === 'deleted')
+                return (
+                  <DeletedTaskRows
+                    key={`deleted-task:${entry.change.logicalKey}`}
+                    changes={changes}
+                    draft={draft}
+                    disabled={disabled}
+                    taskLogicalKey={entry.change.logicalKey}
+                  />
+                );
+              const task = entry.task;
               const hazards = task.hazards.length ? task.hazards : [emptyHazard()];
-              return hazards.map((hazard, hazardIndex) => (
-                <TaskHazardRow
-                  key={`${task.id}-${hazard.id}`}
-                  task={task}
-                  taskIndex={taskIndex}
-                  hazard={hazard}
-                  hazardIndex={hazardIndex}
+              return [
+                ...hazards.map((hazard, hazardIndex) => (
+                  <TaskHazardRow
+                    key={`${task.id}-${hazard.id}`}
+                    task={task}
+                    taskIndex={taskIndex}
+                    hazard={hazard}
+                    hazardIndex={hazardIndex}
+                    draft={draft}
+                    disabled={disabled}
+                    changes={changes}
+                    change={(next) =>
+                      setTask({
+                        ...task,
+                        hazards: task.hazards.some((item) => item.id === hazard.id)
+                          ? task.hazards.map((item) => (item.id === hazard.id ? next : item))
+                          : [next],
+                      })
+                    }
+                    changeTask={setTask}
+                    removeHazard={() => {
+                      if (task.hazards.length <= 1) {
+                        removeTask(task);
+                        return;
+                      }
+                      markDeleted(
+                        'HAZARD',
+                        hazard.logicalKey,
+                        hazard.text || 'Unnamed hazard',
+                        `${task.logicalKey}:${hazard.displayOrder}`,
+                        {
+                          text: hazard.text,
+                          initialLikelihoodId: hazard.initialRisk.likelihoodId,
+                          initialSeverityId: hazard.initialRisk.severityId,
+                          initialRatingCode: hazard.initialRisk.ratingCode,
+                          initialResultCode: hazard.initialRisk.resultCode,
+                          residualLikelihoodId: hazard.residualRisk.likelihoodId,
+                          residualSeverityId:
+                            hazard.residualRisk.severityId ?? hazard.initialRisk.severityId,
+                          residualRatingCode: hazard.residualRisk.ratingCode,
+                          residualResultCode: hazard.residualRisk.resultCode,
+                        },
+                      );
+                      hazard.controls.forEach((control) =>
+                        markDeleted(
+                          'CONTROL',
+                          control.logicalKey,
+                          control.text || 'Unnamed control',
+                          `${hazard.logicalKey}:${control.displayOrder}`,
+                          { text: control.text },
+                        ),
+                      );
+                      setTask({
+                        ...task,
+                        hazards: task.hazards.filter((item) => item.id !== hazard.id),
+                      });
+                    }}
+                    insertTaskAfter={() => insertTaskAfter(task.id)}
+                    removeTask={() => removeTask(task)}
+                  />
+                )),
+                <DeletedTaskRows
+                  key={`deleted-children:${task.logicalKey}`}
+                  changes={changes}
                   draft={draft}
                   disabled={disabled}
-                  change={(next) =>
-                    setTask({
-                      ...task,
-                      hazards: task.hazards.some((item) => item.id === hazard.id)
-                        ? task.hazards.map((item) => (item.id === hazard.id ? next : item))
-                        : [next],
-                    })
-                  }
-                  changeTask={setTask}
-                  removeHazard={() =>
-                    task.hazards.length <= 1
-                      ? removeTaskById(task.id)
-                      : setTask({
-                          ...task,
-                          hazards: task.hazards.filter((item) => item.id !== hazard.id),
-                        })
-                  }
-                  insertTaskAfter={() => insertTaskAfter(task.id)}
-                  removeTask={() => removeTaskById(task.id)}
-                />
-              ));
+                  taskLogicalKey={task.logicalKey}
+                  excludeTask
+                />,
+              ];
             })}
           </tbody>
         </table>
@@ -901,6 +1248,7 @@ function TaskHazardRow({
   hazardIndex,
   draft,
   disabled,
+  changes,
   change,
   changeTask,
   removeHazard,
@@ -913,12 +1261,21 @@ function TaskHazardRow({
   hazardIndex: number;
   draft: JsaDraftDetail;
   disabled: boolean;
+  changes: ChangeMap;
   change: (hazard: JsaDraftHazard) => void;
   changeTask: (task: JsaDraftTask) => void;
   removeHazard: () => void;
   insertTaskAfter: () => void;
   removeTask: () => void;
 }) {
+  const taskChange = changeFor(changes, 'TASK', task.logicalKey);
+  const hazardChange = changeFor(changes, 'HAZARD', hazard.logicalKey);
+  const controlChange = changeFor(
+    changes,
+    'CONTROL',
+    hazard.controls[0]?.logicalKey ?? '',
+  );
+  const rowAdded = added(taskChange, task.id) || added(hazardChange, hazard.id);
   const [riskPicker, setRiskPicker] = useState<{
     kind: 'initialRisk' | 'residualRisk';
     axis: 'probability' | 'severity';
@@ -966,7 +1323,11 @@ function TaskHazardRow({
       draft.matrix.severities.find((item) => item.id === selection.severityId)?.code ?? '—';
     return (
       <>
-        <td className="risk-select-cell">
+        <td
+          className={`risk-select-cell${changedClass(changeFor(changes, 'HAZARD', hazard.logicalKey), [
+            isResidual ? 'residualLikelihoodId' : 'initialLikelihoodId',
+          ])}`}
+        >
           {disabled ? (
             <strong className="risk-readonly-value" aria-label={`${kind} probability`}>
               {probabilityCode}
@@ -986,7 +1347,11 @@ function TaskHazardRow({
             </Button>
           )}
         </td>
-        <td className="risk-select-cell">
+        <td
+          className={`risk-select-cell${changedClass(changeFor(changes, 'HAZARD', hazard.logicalKey), [
+            isResidual ? 'residualSeverityId' : 'initialSeverityId',
+          ])}`}
+        >
           {disabled ? (
             <strong className="risk-readonly-value" aria-label={`${kind} severity`}>
               {severityCode}
@@ -1010,7 +1375,14 @@ function TaskHazardRow({
             </Button>
           )}
         </td>
-        <td className="risk-result-cell">
+        <td
+          className={`risk-result-cell${changedClass(
+            changeFor(changes, 'HAZARD', hazard.logicalKey),
+            isResidual
+              ? ['residualRatingCode', 'residualResultCode']
+              : ['initialRatingCode', 'initialResultCode'],
+          )}`}
+        >
           <span style={{ backgroundColor: cell?.displayColor }}>{cell?.ratingCode ?? '—'}</span>
           <small>{cell?.riskResultCode ?? 'Select P/S'}</small>
         </td>
@@ -1019,9 +1391,12 @@ function TaskHazardRow({
   };
   return (
     <>
-      <tr>
+      <tr
+        className={rowAdded ? 'worksheet-added-grid-row' : undefined}
+        aria-label={rowAdded ? `Added row: ${task.title || `Task ${taskIndex + 1}`}` : undefined}
+      >
         <td>{hazardIndex === 0 ? taskIndex + 1 : null}</td>
-        <td className="task-cell">
+        <td className={`task-cell${changedClass(taskChange, ['number', 'title', 'description'])}`}>
           {hazardIndex === 0 ? (
             <>
               <Input.TextArea
@@ -1066,7 +1441,7 @@ function TaskHazardRow({
             <span className="continued-label">Task {taskIndex + 1} continued</span>
           )}
         </td>
-        <td className="hazard-cell">
+        <td className={`hazard-cell${changedClass(hazardChange, ['text'])}`}>
           <Input.TextArea
             readOnly={disabled}
             aria-label={`Hazard ${hazardIndex + 1} for task ${taskIndex + 1}`}
@@ -1077,7 +1452,7 @@ function TaskHazardRow({
           />
         </td>
         {risk('initialRisk')}
-        <td className="controls-cell">
+        <td className={`controls-cell${changedClass(controlChange, ['text'])}`}>
           <Input.TextArea
             readOnly={disabled}
             aria-label="Hazard control"
@@ -1162,6 +1537,228 @@ function TaskHazardRow({
   );
 }
 
+const previousValue = (change: JsaVersionChange | undefined, field: string) =>
+  change?.fields.find((item) => item.field === field)?.oldValue;
+const parentLogicalKey = (position?: string) =>
+  position?.slice(0, position.lastIndexOf(':')) || undefined;
+
+type AssignmentDisplayValue = {
+  key: string;
+  label: string;
+  state?: 'added' | 'changed' | 'deleted';
+};
+
+const assignmentDisplayValues = (
+  changes: ChangeMap,
+  entityType: 'PERFORMER' | 'SUPERVISOR' | 'TOOL',
+  current: Array<{ id: string; logicalKey: string; name: string }>,
+  stepLogicalKey: string,
+): AssignmentDisplayValue[] => {
+  const currentLogicalKeys = new Set(current.map((item) => item.logicalKey).filter(Boolean));
+  const values = current.map((item) => {
+    const change = changeFor(changes, entityType, item.logicalKey);
+    return {
+      key: item.logicalKey || item.id,
+      label: item.name,
+      ...(added(change, item.id)
+        ? { state: 'added' as const }
+        : changed(change)
+          ? { state: 'changed' as const }
+          : {}),
+    };
+  });
+  const removed = [...changes.values()]
+    .filter(
+      (change) =>
+        change.entityType === entityType &&
+        change.changeType === 'DELETED' &&
+        parentLogicalKey(change.oldPosition) === stepLogicalKey &&
+        !currentLogicalKeys.has(change.logicalKey),
+    )
+    .map((change) => ({
+      key: `deleted:${change.logicalKey}`,
+      label: change.label,
+      state: 'deleted' as const,
+    }));
+  return [...values, ...removed];
+};
+
+const assignmentCellClass = (values: AssignmentDisplayValue[], rowAdded: boolean) => {
+  if (rowAdded) return undefined;
+  if (values.some((value) => value.state === 'changed' || value.state === 'deleted'))
+    return 'worksheet-cell--changed';
+  if (values.some((value) => value.state === 'added')) return 'worksheet-cell--added';
+  return undefined;
+};
+
+function DeletedTaskRows({
+  changes,
+  draft,
+  disabled,
+  taskLogicalKey,
+  excludeTask = false,
+}: {
+  changes: ChangeMap;
+  draft: JsaDraftDetail;
+  disabled: boolean;
+  taskLogicalKey: string;
+  excludeTask?: boolean;
+}) {
+  const tasks = deletedChanges(changes, ['TASK']).filter(
+    (task) => task.logicalKey === taskLogicalKey,
+  );
+  const hazards = deletedChanges(changes, ['HAZARD']).filter(
+    (hazard) => parentLogicalKey(hazard.oldPosition) === taskLogicalKey,
+  );
+  const controls = deletedChanges(changes, ['CONTROL']);
+  const rows: Array<{
+    key: string;
+    task?: JsaVersionChange;
+    currentTask?: JsaDraftTask;
+    hazard?: JsaVersionChange;
+    currentHazard?: JsaDraftHazard;
+    controls: JsaVersionChange[];
+  }> = [];
+
+  hazards.forEach((hazard) => {
+    const taskKey = parentLogicalKey(hazard.oldPosition);
+    const task = tasks.find((item) => item.logicalKey === taskKey);
+    const currentTask = draft.tasks.find((item) => item.logicalKey === taskKey);
+    rows.push({
+      key: `hazard:${hazard.logicalKey}`,
+      task,
+      currentTask,
+      hazard,
+      controls: controls.filter(
+        (control) => parentLogicalKey(control.oldPosition) === hazard.logicalKey,
+      ),
+    });
+  });
+  tasks
+    .filter(() => !excludeTask)
+    .filter(
+      (task) => !hazards.some((hazard) => parentLogicalKey(hazard.oldPosition) === task.logicalKey),
+    )
+    .forEach((task) =>
+      rows.push({ key: `task:${task.logicalKey}`, task, controls: [] }),
+    );
+  controls
+    .filter(
+      (control) =>
+        !hazards.some(
+          (hazard) => hazard.logicalKey === parentLogicalKey(control.oldPosition),
+        ),
+    )
+    .forEach((control) => {
+      const hazardKey = parentLogicalKey(control.oldPosition);
+      const currentTask = draft.tasks.find((task) =>
+        task.logicalKey === taskLogicalKey &&
+        task.hazards.some((hazard) => hazard.logicalKey === hazardKey),
+      );
+      if (!currentTask) return;
+      rows.push({
+        key: `control:${control.logicalKey}`,
+        currentTask,
+        currentHazard: currentTask?.hazards.find(
+          (hazard) => hazard.logicalKey === hazardKey,
+        ),
+        controls: [control],
+      });
+    });
+
+  const axisCode = (
+    levels: RiskAxisLevel[],
+    id: string | number | boolean | null | undefined,
+  ) => levels.find((level) => level.id === String(id ?? ''))?.code ?? String(id ?? '—');
+  const riskResult = (
+    hazard: JsaVersionChange | undefined,
+    current: JsaDraftHazard | undefined,
+    kind: 'initial' | 'residual',
+  ) => {
+    const prefix = kind === 'initial' ? 'initial' : 'residual';
+    const selection = kind === 'initial' ? current?.initialRisk : current?.residualRisk;
+    const likelihood =
+      previousValue(hazard, `${prefix}LikelihoodId`) ?? selection?.likelihoodId;
+    const severity =
+      previousValue(hazard, `${prefix}SeverityId`) ??
+      selection?.severityId ??
+      current?.initialRisk.severityId;
+    return {
+      probability: axisCode(draft.matrix.likelihoods, likelihood),
+      severity: axisCode(draft.matrix.severities, severity),
+      rating: String(
+        previousValue(hazard, `${prefix}RatingCode`) ?? selection?.ratingCode ?? '—',
+      ),
+      result: String(
+        previousValue(hazard, `${prefix}ResultCode`) ?? selection?.resultCode ?? '',
+      ),
+    };
+  };
+
+  return rows.map((row) => {
+    const taskTitle = String(
+      previousValue(row.task, 'title') ?? row.currentTask?.title ?? row.task?.label ?? '—',
+    );
+    const taskNumber = String(
+      previousValue(row.task, 'number') ?? row.currentTask?.number ?? '—',
+    );
+    const hazardText = String(
+      previousValue(row.hazard, 'text') ??
+        row.currentHazard?.text ??
+        row.hazard?.label ??
+        '—',
+    );
+    const initial = riskResult(row.hazard, row.currentHazard, 'initial');
+    const residual = riskResult(row.hazard, row.currentHazard, 'residual');
+    const controlText =
+      row.controls
+        .map((control) => String(previousValue(control, 'text') ?? control.label))
+        .join('\n') || '—';
+    return (
+      <tr
+        className="worksheet-deleted-grid-row"
+        aria-label={`Deleted row: ${taskTitle}`}
+        key={row.key}
+      >
+        <td>
+          <del>{taskNumber}</del>
+          <Tag>Deleted</Tag>
+        </td>
+        <td className="task-cell">
+          <del>{taskTitle}</del>
+        </td>
+        <td className="hazard-cell">
+          <del>{hazardText}</del>
+        </td>
+        <td className="risk-select-cell">
+          <del>{initial.probability}</del>
+        </td>
+        <td className="risk-select-cell">
+          <del>{initial.severity}</del>
+        </td>
+        <td className="risk-result-cell">
+          <del>{initial.rating}</del>
+          <small>{initial.result}</small>
+        </td>
+        <td className="controls-cell">
+          <del>{controlText}</del>
+        </td>
+        <td className="risk-select-cell">
+          <del>{residual.probability}</del>
+        </td>
+        <td className="risk-select-cell">
+          <del>{residual.severity}</del>
+        </td>
+        <td className="risk-result-cell">
+          <del>{residual.rating}</del>
+          <small>{residual.result}</small>
+        </td>
+        {!disabled ? <td aria-hidden="true" /> : null}
+      </tr>
+    );
+  });
+}
+
 function emptyHazard(): JsaDraftHazard {
   return {
     id: fresh(),
@@ -1189,10 +1786,14 @@ function BasicStepSection({
   draft,
   disabled,
   update,
+  changes,
+  markDeleted,
 }: {
   draft: JsaDraftDetail;
   disabled: boolean;
   update: DraftUpdater;
+  changes: ChangeMap;
+  markDeleted: MarkDeleted;
 }) {
   const suffix = `?siteId=${draft.ownerSiteId}&rigId=${draft.rigId}&departmentId=${draft.departmentId}`;
   const positions = useQuery({
@@ -1241,6 +1842,17 @@ function BasicStepSection({
   const applyPicker = (ids: string[]) => {
     if (!step || !picker) return;
     if (picker.kind === 'tools') {
+      step.tools
+        .filter((item) => persisted(item.id) && !ids.includes(item.toolId))
+        .forEach((item) =>
+          markDeleted(
+            'TOOL',
+            item.logicalKey,
+            item.name,
+            `${step.logicalKey}:${item.displayOrder}`,
+            { code: item.code, name: item.name },
+          ),
+        );
       const snapshots: JsaToolSnapshot[] = ids.map((toolId, index) => {
         const existing = step.tools.find((item) => item.toolId === toolId);
         const record = tools.data?.find((item) => item.id === toolId);
@@ -1259,6 +1871,17 @@ function BasicStepSection({
       change({ ...step, tools: snapshots, noToolRequired: false });
     } else {
       const source = picker.kind === 'performers' ? step.performers : step.supervisors;
+      source
+        .filter((item) => persisted(item.id) && !ids.includes(item.positionId))
+        .forEach((item) =>
+          markDeleted(
+            picker.kind === 'performers' ? 'PERFORMER' : 'SUPERVISOR',
+            item.logicalKey,
+            item.name,
+            `${step.logicalKey}:${item.displayOrder}`,
+            { code: item.code, name: item.name },
+          ),
+        );
       const snapshots: JsaPositionSnapshot[] = ids.map((positionId, index) => {
         const existing = source.find((item) => item.positionId === positionId);
         const record = positions.data?.find((item) => item.id === positionId);
@@ -1313,9 +1936,38 @@ function BasicStepSection({
                 </td>
               </tr>
             )}
-            {draft.basicSteps.map((item, index) => (
-              <tr key={item.id}>
-                <td>
+            {draft.basicSteps.map((item, index) => {
+              const stepChange = changeFor(changes, 'BASIC_STEP', item.logicalKey);
+              const rowAdded = added(stepChange, item.id);
+              const performerValues = assignmentDisplayValues(
+                changes,
+                'PERFORMER',
+                item.performers,
+                item.logicalKey,
+              );
+              const supervisorValues = assignmentDisplayValues(
+                changes,
+                'SUPERVISOR',
+                item.supervisors,
+                item.logicalKey,
+              );
+              const toolValues = assignmentDisplayValues(
+                changes,
+                'TOOL',
+                item.tools,
+                item.logicalKey,
+              );
+              return (
+              <tr
+                key={item.id}
+                className={rowAdded ? 'worksheet-added-grid-row' : undefined}
+                aria-label={
+                  rowAdded
+                    ? `Added row: ${item.text || `Basic Job Step ${index + 1}`}`
+                    : undefined
+                }
+              >
+                <td className={changedClass(stepChange, ['number'])}>
                   <Input
                     readOnly={disabled}
                     aria-label={`Basic Job Step ${index + 1} number`}
@@ -1323,7 +1975,7 @@ function BasicStepSection({
                     onChange={(event) => change({ ...item, number: event.target.value })}
                   />
                 </td>
-                <td>
+                <td className={changedClass(stepChange, ['text'])}>
                   <Input.TextArea
                     readOnly={disabled}
                     aria-label={`Basic Job Step ${index + 1}`}
@@ -1332,55 +1984,77 @@ function BasicStepSection({
                     onChange={(event) => change({ ...item, text: event.target.value })}
                   />
                 </td>
-                <td>
+                <td
+                  className={assignmentCellClass(performerValues, rowAdded)}
+                >
                   <AssignmentButton
                     icon={<UserOutlined />}
                     label="Select performers"
-                    values={item.performers.map((value) => value.name)}
+                    values={performerValues}
                     readOnly={disabled}
                     onClick={() => setPicker({ stepId: item.id, kind: 'performers' })}
                   />
                 </td>
-                <td>
+                <td
+                  className={assignmentCellClass(supervisorValues, rowAdded)}
+                >
                   <AssignmentButton
                     icon={<UserOutlined />}
                     label="Select supervisors"
-                    values={item.supervisors.map((value) => value.name)}
+                    values={supervisorValues}
                     readOnly={disabled}
                     onClick={() => setPicker({ stepId: item.id, kind: 'supervisors' })}
                   />
                 </td>
-                <td>
+                <td
+                  className={
+                    changed(stepChange, ['noToolRequired']) ||
+                    assignmentCellClass(toolValues, rowAdded) === 'worksheet-cell--changed'
+                      ? 'worksheet-cell--changed'
+                      : assignmentCellClass(toolValues, rowAdded)
+                  }
+                >
                   {disabled ? (
-                    item.noToolRequired ? (
-                      <Tag>No tool required</Tag>
-                    ) : (
+                    <>
                       <AssignmentButton
                         icon={<ToolOutlined />}
                         label="Select tools"
-                        values={item.tools.map((value) => value.name)}
+                        values={toolValues}
                         readOnly
                         onClick={() => setPicker({ stepId: item.id, kind: 'tools' })}
                       />
-                    )
+                      {item.noToolRequired ? <Tag>No tool required</Tag> : null}
+                    </>
                   ) : (
                     <>
                       <AssignmentButton
                         icon={<ToolOutlined />}
                         label="Select tools"
-                        values={item.tools.map((value) => value.name)}
+                        values={toolValues}
                         disabled={item.noToolRequired}
                         onClick={() => setPicker({ stepId: item.id, kind: 'tools' })}
                       />
                       <Checkbox
                         checked={item.noToolRequired}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          if (event.target.checked)
+                            item.tools
+                              .filter((tool) => persisted(tool.id))
+                              .forEach((tool) =>
+                                markDeleted(
+                                  'TOOL',
+                                  tool.logicalKey,
+                                  tool.name,
+                                  `${item.logicalKey}:${tool.displayOrder}`,
+                                  { code: tool.code, name: tool.name },
+                                ),
+                              );
                           change({
                             ...item,
                             noToolRequired: event.target.checked,
                             ...(event.target.checked ? { tools: [] } : {}),
-                          })
-                        }
+                          });
+                        }}
                       >
                         No tool required
                       </Checkbox>
@@ -1394,17 +2068,42 @@ function BasicStepSection({
                       danger
                       icon={<DeleteOutlined />}
                       aria-label={`Delete Basic Job Step ${index + 1}`}
-                      onClick={() =>
+                      onClick={() => {
+                        markDeleted(
+                          'BASIC_STEP',
+                          item.logicalKey,
+                          item.text || `Basic Job Step ${item.number ?? index + 1}`,
+                        );
+                        item.performers.forEach((assignment) =>
+                          markDeleted('PERFORMER', assignment.logicalKey, assignment.name),
+                        );
+                        item.supervisors.forEach((assignment) =>
+                          markDeleted('SUPERVISOR', assignment.logicalKey, assignment.name),
+                        );
+                        item.tools.forEach((assignment) =>
+                          markDeleted('TOOL', assignment.logicalKey, assignment.name),
+                        );
                         update((current) => ({
                           ...current,
                           basicSteps: current.basicSteps.filter(
                             (stepItem) => stepItem.id !== item.id,
                           ),
-                        }))
-                      }
+                        }));
+                      }}
                     />
                   </td>
                 ) : null}
+              </tr>
+              );
+            })}
+            {deletedChanges(changes, ['BASIC_STEP']).map((change) => (
+              <tr
+                className="worksheet-deleted-row"
+                key={changeKey(change.entityType, change.logicalKey)}
+              >
+                <td colSpan={disabled ? 5 : 6}>
+                  <DeletedReference change={change} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1445,23 +2144,34 @@ function AssignmentButton({
 }: {
   icon: React.ReactNode;
   label: string;
-  values: string[];
+  values: AssignmentDisplayValue[];
   readOnly?: boolean;
   disabled?: boolean;
   onClick: () => void;
 }) {
+  const selectedCount = values.filter((value) => value.state !== 'deleted').length;
   return (
     <div className={`assignment-summary${readOnly ? ' assignment-summary--readonly' : ''}`}>
       {!readOnly ? (
         <Button icon={icon} disabled={disabled} onClick={onClick}>
-          {label} ({values.length})
+          {label} ({selectedCount})
         </Button>
       ) : null}
       <div className="assignment-values">
         {values.map((value) => (
-          <Tag key={value}>{value}</Tag>
+          <Tag
+            key={value.key}
+            color={
+              value.state === 'added' ? 'green' : value.state === 'changed' ? 'red' : undefined
+            }
+            className={
+              value.state ? `assignment-value assignment-value--${value.state}` : undefined
+            }
+          >
+            {value.state === 'deleted' ? <del>{value.label}</del> : value.label}
+          </Tag>
         ))}
-        {readOnly && values.length === 0 ? <span>None recorded</span> : null}
+        {readOnly && selectedCount === 0 ? <span>None recorded</span> : null}
       </div>
     </div>
   );
@@ -1526,10 +2236,14 @@ function ReferenceAttachmentSection({
   draft,
   disabled,
   update,
+  changes,
+  markDeleted,
 }: {
   draft: JsaDraftDetail;
   disabled: boolean;
   update: DraftUpdater;
+  changes: ChangeMap;
+  markDeleted: MarkDeleted;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerFolderId, setPickerFolderId] = useState<string>();
@@ -1555,7 +2269,13 @@ function ReferenceAttachmentSection({
       .map((item) => item.libraryAssetVersionId)
       .filter((value): value is string => Boolean(value)),
   );
-  const toggle = (asset: AttachmentLibraryAsset, checked: boolean) =>
+  const toggle = (asset: AttachmentLibraryAsset, checked: boolean) => {
+    if (!checked) {
+      const existing = draft.attachments.find(
+        (item) => item.libraryAssetVersionId === asset.currentVersionId,
+      );
+      if (existing) markDeleted('ATTACHMENT', existing.logicalKey, existing.fileName);
+    }
     update((current) => ({
       ...current,
       attachments: checked
@@ -1578,6 +2298,7 @@ function ReferenceAttachmentSection({
             (item) => item.libraryAssetVersionId !== asset.currentVersionId,
           ),
     }));
+  };
   const folders = (library.data?.folders ?? []).filter(
     (folder) =>
       folder.active &&
@@ -1663,8 +2384,13 @@ function ReferenceAttachmentSection({
           ) : null}
           {draft.attachments
             .filter((item) => item.libraryAssetVersionId)
-            .map((item) => (
-              <div className="list-row" key={item.id}>
+            .map((item) => {
+              const attachmentChange = changeFor(changes, 'ATTACHMENT', item.logicalKey);
+              return (
+              <div
+                className={`list-row${changedClass(attachmentChange)}`}
+                key={item.id}
+              >
                 <span>
                   {item.fileName} <Tag>Library</Tag>
                 </span>
@@ -1674,18 +2400,26 @@ function ReferenceAttachmentSection({
                     danger
                     icon={<DeleteOutlined />}
                     aria-label={`Remove attachment ${item.fileName}`}
-                    onClick={() =>
+                    onClick={() => {
+                      markDeleted('ATTACHMENT', item.logicalKey, item.fileName);
                       update((current) => ({
                         ...current,
                         attachments: current.attachments.filter(
                           (attachment) => attachment.id !== item.id,
                         ),
-                      }))
-                    }
+                      }));
+                    }}
                   />
                 ) : null}
               </div>
-            ))}
+              );
+            })}
+          {deletedChanges(changes, ['ATTACHMENT']).map((change) => (
+            <DeletedReference
+              key={changeKey(change.entityType, change.logicalKey)}
+              change={change}
+            />
+          ))}
         </Card>
       </div>
       {!disabled ? (

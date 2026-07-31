@@ -411,3 +411,40 @@ Added transactional NestJS `master-data` and `risk-matrix` slices with repositor
 Added responsive administrator pages for every Phase 2 catalogue, Matrix/version list, full axis/result/cell editor, lookup-driven preview/legend, incomplete-state messaging, and Rig assignment management. Tool editing selects a real active Tool Category. Navigation and direct routes use the existing centralized permission model and design-system tokens.
 
 Added a deployment-only Phase 2 sequence bootstrap, real-Oracle transactional behavior verifier, schema/unit tests, backend mixed-code/completeness/parameter tests, and frontend administration/preview tests. Migration 004 was applied, verified, rolled back in isolation, and reapplied on the confirmed development schema. Phase 1 business bootstrap, Phase 2 sequence bootstrap, official catalogue data, and official Rig Matrix configuration remain intentionally unexecuted because their approved environment/business inputs were not supplied.
+
+## Phase 5 — 2026-07-30
+
+Implemented controlled Published JSA checkout and replacement across migrations 014/015, the new `jsa-versioning` module, existing Draft/Workflow repositories, shared contracts, and React workspaces. Checkout now locks the Master and creates a complete physical snapshot with stable logical keys, exact attachment references, Base lineage, Matrix-change reassessment, checkout identity, and an atomic Working pointer. Undo Checkout cancels the Working Version only when no active approval task exists.
+
+Added deterministic on-demand Base/Working comparison for header, prompts and coverage, tasks, hazards/risk, controls, basic steps, assignments, tools, procedures, and attachments. The UI supplies summary counts, changes-only/type/section filters, inline before/working values, moved/deleted treatment, version history, owner checkout metadata, and embedded approver comparison.
+
+Extended final workflow approval so a revision reuses the official number, marks the old Current Version `SUPERSEDED`, publishes the Working Version, advances the Current pointer, and clears checkout state atomically. Operational detail and print continue to resolve only the Current Published pointer. Update, Compare/History, and Undo Checkout are independently mapped and fail closed as a group when configuration is partial.
+
+The Oracle migration chain was applied, verified, rolled back through 015 and 014, verified in the prior state, and reapplied. A verification failure exposed invalidated child immutability triggers after procedure replacement; migration 015 now recompiles all dependencies and hardens immutable creation evidence during supersession.
+
+## Phase 6A/6B — 2026-07-30
+
+Implemented one `jsa-browse` API/repository contract for Published, Favorites, All JSAs, My Drafts, Needs Approval, Pending, and Rejected. The contract validates explicit search-field/filter enums, NUMBER(19) identifiers, ISO dates, minimum search length, bounded page size, and allowlisted sorting before Oracle receives bound values. SQL applies effective view scope, queue ownership/current-assignee semantics, separate Current/Working visibility, exact Current Published semantics, stable ID tie-breaking, and matched field/version-kind metadata.
+
+Added `/jsa/all` and `/jsa/favorites`, migrated operational list routes to the shared server-paged React workspace, retained the global Working Rig as a narrowing filter, and extended the existing ribbon/filter/table interaction. Structured filters cover Site, Rig, Department, official and Working status, Matrix Version, risk result/stage, Creator, Publisher/Approver, active update, Favorite state, and created/published/updated ranges. Favorite remains a selected-row ribbon action rather than a per-row action.
+
+Migration 016 adds one soft-state Favorite row per User/JSA Master, explicit Site-ranged sequence allocation, provenance/audit/row-version fields, lookup indexes, and targeted browse indexes. Favorite writes require independently configured view and Favorite permissions, view scope, and a valid Current Published Version; they are idempotent and emit structured security audit logs only on state change. No Permission or grant is seeded.
+
+The first Oracle apply failed before history recording because a browse index referenced a Master-owned creator column on `JSA_VERSION`. The partial Oracle DDL was compensated, the index corrected, and migration 016 applied. Its rollback was then extended to remove sequence-range registration; the complete rollback, reapply, bootstrap, and verification chain passed.
+
+## Phase 6C — Cross-Rig Copy (2026-07-30)
+
+- Added migration/rollback 017 for immutable copy provenance, exact source/destination Version lineage, actor-scoped persisted idempotency, source/time indexes, and a Site-ranged sequence. Rollback refuses any schema containing provenance rows.
+- Added fail-closed `jsa-copy` capabilities and APIs for destination discovery, authoritative preflight, transactional copy, idempotent retry, and provenance. View/Create/Copy permissions and source VIEW/destination ACT scope remain independent; `SYSTEM_ADMIN` is not an implicit substitute.
+- The copy creates a new Master and Version plus new physical IDs/logical keys, remaps approved worksheet relationships and stable reference codes, and excludes official numbering, coverage, procedures, workflow/evidence, favorites, notifications, and attachments/binaries.
+- Exact Matrix-Version equality preserves validated risk; different Matrix Versions clear all risk for reassessment. Missing/ambiguous Position or required Tool mappings block; prompt gaps warn and require acknowledgement.
+- Added a ribbon-only Copy flow for Published/Favorites/All, responsive destination/preflight/confirm UI, post-success destination worksheet opening, and durable Copied-from provenance presentation.
+- Applied 017 on Oracle after correcting a PL/SQL delimiter exposed by non-transactional DDL, then completed controlled rollback/reapply, Site bootstrap, full schema verification, and rolled-back behavior verification. No speculative Permission, grant, organization, Matrix, or reference data was seeded.
+- `docs/state.md` was not updated for Phase 6C: the conservative limitations above implement this phase safely and do not settle the broader open business decisions.
+# Phase 7 — Translation Management (2026-07-30)
+
+- Added migration 018 and fail-closed rollback for Translation header, structured CLOB segments, append-only actions, sequences, indexes, hashes, status checks, and immutable final/source evidence.
+- Added the `jsa-translation` Nest module with fail-closed permission mappings, OIM/Translator/STC eligibility, local ownership and scope enforcement, assignment/refresh, Translator and STC lifecycle, queues, history, notifications/outbox, and current-source print checks.
+- Integrated replacement publication so all Translations of the superseded source are atomically Outdated with replacement linkage, assignee clearing, actions, and notifications.
+- Added the `/jsa/translations` workspace, assignment ribbon/modal, side-by-side editor/reviewer, status/history views, navigation counts, responsive layout, and browser HTML print. Translation queues use scoped server-side pagination, escaped JSA Number/Job Title search, status filtering, allowlisted sorting, stable ID tie-breaking, and do not load segment detail per row.
+- Added Phase 7 bootstrap, schema/unit tests, real Oracle rolled-back verifier, environment documentation, and shared contracts. No production business seed was added.

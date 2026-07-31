@@ -120,6 +120,9 @@ export interface DraftAccessRecord {
   rigId: string;
   departmentId: string;
   creatorUserId: string;
+  currentVersionId?: string;
+  baseVersionId?: string;
+  checkedOutByUserId?: string;
   status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
   versionStatus: string;
   rowVersion: string;

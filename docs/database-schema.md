@@ -232,3 +232,31 @@ Migration 007 adds `SYS_ACCESS_ADMIN_AUDIT`, whose `AUDIT_EVENT_ID NUMBER(19)` i
 `JSA_WORKFLOW_TASK` gains immutable-at-creation snapshots for step code/name, workflow Role code, and assignee username/display name. `JSA_WORKFLOW_ACTION` gains step code/name, workflow Role code, and actor display-name snapshots. Existing records are backfilled by migration; later user profile, Role, scope, or workflow-assignment changes do not rewrite historical approval evidence.
 
 The new audit sequence participates in the same Site-range startup validation, controlled Phase 4.5 sequence-only bootstrap, and GoldenGate invariants as every prior key: preserve source IDs, never regenerate target IDs, and never replicate sequence state.
+
+## Phase 5 checkout, version lineage, and supersession
+
+Migrations 014 and 015 add no new business table or sequence. `JSA_MASTER` gains `CHECKED_OUT_BY_USER_ID`, username/display-name snapshots, and `CHECKED_OUT_AT`; `CHK_JSA_MASTER_CHECKOUT` keeps those values consistent with the Working pointer while preserving the initial-draft case. `IX_JSA_MASTER_CURRENT_WORKING` and `IX_JSA_VERSION_BASE` support pointer and lineage reads.
+
+`JSA_VERSION.BASE_VERSION_ID` is the explicit revision lineage. The status domain now includes `SUPERSEDED`; both Published and Superseded rows retain publication evidence. `JSA_ASSERT_VERSION_MUTABLE` blocks changes to children of either status. The root trigger permits exactly the metadata-only `PUBLISHED` to `SUPERSEDED` transition, rejects deletion and later mutation, and migration 015 recompiles all dependent child triggers after the procedure replacement.
+
+Checkout clones the full active aggregate into new physical rows from the existing per-table sequences. Logical keys, hierarchy, catalogue snapshots, procedure snapshots, and exact attachment-library version/storage/checksum metadata are preserved. When the effective checkout Matrix differs from the Base Matrix, all copied initial and residual risk selections/results are cleared; no cross-Matrix score or code conversion is inferred.
+
+## Phase 6 Browse/Search and user Favorites
+
+Migration 016 creates `JSA_USER_FAVORITE` and `SEQ_JSA_USER_FAVORITE`. One row is retained per `(USER_ID,JSA_ID)`; `IS_ACTIVE`, `FAVORITED_AT`, and `UNFAVORITED_AT` implement idempotent soft activation/deactivation. The table has User/Master foreign keys, created/updated Site provenance, actor/time audit fields, and optimistic `ROW_VERSION`.
+
+`IX_JSA_FAVORITE_USER_ACTIVE` supports the user list/count, and `IX_JSA_FAVORITE_MASTER_ACTIVE` supports Master eligibility. `IX_JSA_VERSION_BROWSE_STATE` and `IX_JSA_VERSION_BROWSE_ACTORS` support lifecycle, Matrix, time, and publisher predicates. Child content search reuses existing version-leading Task/Hazard/Control/Prompt indexes; no unsupported Oracle Text dependency or misleading B-tree index for contains-search was added.
+
+`db:bootstrap:phase6` registers and positions only the Favorite sequence in the approved local Site range. GoldenGate preserves Favorite IDs and never replicates sequence state. The authoritative-site/conflict rule for simultaneous cross-site preference writes remains open.
+
+## Phase 6C Cross-Rig Copy provenance
+
+Migration 017 adds `JSA_COPY_PROVENANCE`, one immutable row per copied destination Master. It records the exact destination Version, source Master and Version, source Site/Rig snapshots, copy reason, actor identity snapshots, timestamp, created Site, and actor-scoped request key/hash. Composite foreign keys prevent source or destination Version/Master mismatches. `TRG_JSA_COPY_PROV_IMMUTABLE` rejects update and delete.
+
+`UK_JSA_COPY_DESTINATION` enforces one origin for a copied Master and `UK_JSA_COPY_REQUEST` enforces idempotency per actor. `IX_JSA_COPY_SOURCE` supports source lineage and `IX_JSA_COPY_TIME` supports chronological investigation. `SEQ_JSA_COPY_PROVENANCE` is registered in the existing local Site range by the Phase 6C bootstrap.
+
+## Phase 7 Translation model
+
+Migration 018 creates `JSA_TRANSLATION`, `JSA_TRANSLATION_SEGMENT`, and append-only `JSA_TRANSLATION_ACTION`, with one explicit sequence per table. A Translation is unique by exact source Version and target language, snapshots Translator/assigner/STC identities, and supports only `ASSIGNED`, `IN_TRANSLATION`, `STC_REVIEW`, `RETURNED`, `PUBLISHED`, and `OUTDATED`.
+
+Segments retain source physical ID, source logical key, entity/field/section identity, immutable source CLOB and SHA-256, target CLOB, display order, required flag, and optimistic row version. `JSA_ASSERT_TRANSL_MUTABLE` and triggers block target changes outside Translator states, segment inventory changes after initialization, final Translation mutation except Published→Outdated, Translation deletion, and action update/delete. Rollback 018 refuses any Translation history.

@@ -24,6 +24,9 @@ export const jsaApi = {
     apiClient.get<RiskMatrixVersionDetail>(`/jsa-drafts/effective-matrix/${rigId}`),
   create: (body: CreateJsaDraftRequest) => apiClient.post<JsaDraftDetail>('/jsa-drafts', body),
   detail: (id: string) => apiClient.get<JsaDraftDetail>(`/jsa-drafts/${id}`),
+  currentDetail: (id: string) => apiClient.get<JsaDraftDetail>(`/jsa-drafts/${id}/current`),
+  versionDetail: (id: string, versionId: string) =>
+    apiClient.get<JsaDraftDetail>(`/jsa-drafts/${id}/versions/${versionId}`),
   printDetail: (id: string) => apiClient.get<JsaDraftDetail>(`/jsa-drafts/${id}/print`),
   save: (id: string, body: unknown) =>
     apiClient.put<JsaDraftDetail>(`/jsa-drafts/${id}/save`, body),

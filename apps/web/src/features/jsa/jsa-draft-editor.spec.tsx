@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JsaDraftDetail, RiskMatrixVersionDetail } from '@jsams/shared-types';
 import { JsaDraftEditor } from './jsa-draft-editor';
 import { jsaApi } from './jsa-api';
+import { versioningApi } from './versioning-api';
 import { workflowApi } from './workflow-api';
 
 vi.mock('./jsa-api', () => ({
@@ -25,6 +26,19 @@ vi.mock('./workflow-api', () => ({
     preview: vi.fn(),
     detail: vi.fn(),
     submit: vi.fn(),
+  },
+}));
+vi.mock('./versioning-api', () => ({
+  versioningApi: {
+    capabilities: vi.fn(async () => ({
+      configured: true,
+      update: true,
+      compare: true,
+      undoCheckout: true,
+    })),
+    undo: vi.fn(),
+    compare: vi.fn(),
+    reviewCompare: vi.fn(),
   },
 }));
 
@@ -134,7 +148,11 @@ function draft(): JsaDraftDetail {
   };
 }
 
-function renderEditor(props?: { embedded?: boolean; forceReadOnly?: boolean }) {
+function renderEditor(props?: {
+  embedded?: boolean;
+  forceReadOnly?: boolean;
+  reviewComparison?: boolean;
+}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -204,6 +222,405 @@ describe('JsaDraftEditor single-page worksheet', () => {
       cycleNumber: 1,
       actions: [],
     });
+  });
+
+  it('highlights changed fields and fades entities deleted from the Published Version', async () => {
+    const value = draft();
+    value.baseVersionId = '199';
+    vi.mocked(jsaApi.detail).mockResolvedValue(value);
+    vi.mocked(versioningApi.compare).mockResolvedValue({
+      jsaId: '100',
+      baseVersionId: '199',
+      workingVersionId: '200',
+      summary: { ADDED: 0, MODIFIED: 1, DELETED: 1, MOVED: 0, UNCHANGED: 0 },
+      changes: [
+        {
+          entityType: 'HEADER',
+          logicalKey: 'HEADER',
+          changeType: 'MODIFIED',
+          label: 'General Information',
+          fields: [{ field: 'jobTitle', oldValue: 'Old title', newValue: value.jobTitle }],
+        },
+        {
+          entityType: 'TASK',
+          logicalKey: 'old-task',
+          changeType: 'DELETED',
+          label: 'Removed task',
+          fields: [],
+          oldPosition: 'ROOT:1',
+        },
+      ],
+    });
+
+    renderEditor();
+
+    const title = await screen.findByDisplayValue('Single-page test');
+    await waitFor(() => expect(title.closest('label')).toHaveClass('worksheet-cell--changed'));
+    expect(await screen.findByLabelText('Deleted row: Removed task')).toHaveClass(
+      'worksheet-deleted-grid-row',
+    );
+  });
+
+  it('uses workflow review comparison to highlight the embedded read-only worksheet', async () => {
+    const value = draft();
+    value.baseVersionId = '199';
+    value.editable = false;
+    value.tasks = [
+      {
+        id: '300',
+        logicalKey: 'task-1',
+        number: '1',
+        title: 'Updated task for approval',
+        displayOrder: 1,
+        hazards: [],
+        rowVersion: '1',
+      },
+    ];
+    vi.mocked(jsaApi.detail).mockResolvedValue(value);
+    vi.mocked(versioningApi.reviewCompare).mockResolvedValue({
+      jsaId: '100',
+      baseVersionId: '199',
+      workingVersionId: '200',
+      summary: { ADDED: 0, MODIFIED: 1, DELETED: 0, MOVED: 0, UNCHANGED: 0 },
+      changes: [
+        {
+          entityType: 'TASK',
+          logicalKey: 'task-1',
+          changeType: 'MODIFIED',
+          label: 'Updated task for approval',
+          fields: [
+            {
+              field: 'title',
+              oldValue: 'Published task',
+              newValue: 'Updated task for approval',
+            },
+          ],
+        },
+      ],
+    });
+
+    renderEditor({ embedded: true, forceReadOnly: true, reviewComparison: true });
+
+    const task = await screen.findByDisplayValue('Updated task for approval');
+    expect(task.closest('td')).toHaveClass('worksheet-cell--changed');
+    expect(versioningApi.reviewCompare).toHaveBeenCalledWith('100');
+    expect(versioningApi.compare).not.toHaveBeenCalled();
+  });
+
+  it('highlights newly added Task and Basic Job Step rows immediately before Save Draft', async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await screen.findByText('TASK / HAZARD / CONTROL ASSESSMENT (0)');
+    await user.click(screen.getByRole('button', { name: /Add Task$/ }));
+    await user.type(screen.getByLabelText('Task 1'), 'New task');
+
+    const taskRow = screen.getByLabelText('Added row: New task');
+    expect(taskRow).toHaveClass('worksheet-added-grid-row');
+    expect(taskRow.children).toHaveLength(11);
+
+    await user.click(screen.getByRole('button', { name: /Add Basic Job Step$/ }));
+    await user.type(screen.getByLabelText('Basic Job Step 1'), 'New basic step');
+
+    expect(screen.getByLabelText('Added row: New basic step')).toHaveClass(
+      'worksheet-added-grid-row',
+    );
+  });
+
+  it('keeps saved ADDED rows green without marking their individual cells as modified', async () => {
+    const value = draft();
+    value.baseVersionId = '199';
+    value.tasks = [
+      {
+        id: '300',
+        logicalKey: 'added-task',
+        number: '1',
+        title: 'Saved new task',
+        displayOrder: 1,
+        hazards: [
+          {
+            id: '301',
+            logicalKey: 'added-hazard',
+            text: 'Saved new hazard',
+            displayOrder: 1,
+            initialRisk: {},
+            residualRisk: {},
+            controls: [
+              {
+                id: '302',
+                logicalKey: 'added-control',
+                text: 'Saved new control',
+                displayOrder: 1,
+                rowVersion: '1',
+              },
+            ],
+            rowVersion: '1',
+          },
+        ],
+        rowVersion: '1',
+      },
+    ];
+    vi.mocked(jsaApi.detail).mockResolvedValue(value);
+    vi.mocked(versioningApi.compare).mockResolvedValue({
+      jsaId: '100',
+      baseVersionId: '199',
+      workingVersionId: '200',
+      summary: { ADDED: 3, MODIFIED: 0, DELETED: 0, MOVED: 0, UNCHANGED: 0 },
+      changes: [
+        {
+          entityType: 'TASK',
+          logicalKey: 'added-task',
+          changeType: 'ADDED',
+          label: 'Saved new task',
+          fields: [{ field: 'title', newValue: 'Saved new task' }],
+        },
+        {
+          entityType: 'HAZARD',
+          logicalKey: 'added-hazard',
+          changeType: 'ADDED',
+          label: 'Saved new hazard',
+          fields: [{ field: 'text', newValue: 'Saved new hazard' }],
+        },
+        {
+          entityType: 'CONTROL',
+          logicalKey: 'added-control',
+          changeType: 'ADDED',
+          label: 'Saved new control',
+          fields: [{ field: 'text', newValue: 'Saved new control' }],
+        },
+      ],
+    });
+
+    renderEditor();
+
+    const addedRow = await screen.findByLabelText('Added row: Saved new task');
+    expect(addedRow).toHaveClass('worksheet-added-grid-row');
+    expect(addedRow.querySelectorAll('.worksheet-cell--changed')).toHaveLength(0);
+  });
+
+  it('shows added and deleted Performer, Supervisor, and Tool selections in their cells', async () => {
+    const value = draft();
+    value.baseVersionId = '199';
+    value.basicSteps = [
+      {
+        id: '400',
+        logicalKey: 'step-1',
+        number: '1',
+        text: 'Existing basic step',
+        displayOrder: 1,
+        noToolRequired: true,
+        performers: [
+          {
+            id: '402',
+            logicalKey: 'performer-added',
+            positionId: '22',
+            code: 'FLOORHAND',
+            name: 'Floorhand',
+            displayOrder: 1,
+            rowVersion: '1',
+          },
+        ],
+        supervisors: [
+          {
+            id: '403',
+            logicalKey: 'supervisor-added',
+            positionId: '23',
+            code: 'DRILLER',
+            name: 'Driller',
+            displayOrder: 1,
+            rowVersion: '1',
+          },
+        ],
+        tools: [],
+        rowVersion: '1',
+      },
+    ];
+    vi.mocked(jsaApi.detail).mockResolvedValue(value);
+    vi.mocked(versioningApi.compare).mockResolvedValue({
+      jsaId: '100',
+      baseVersionId: '199',
+      workingVersionId: '200',
+      summary: { ADDED: 2, MODIFIED: 0, DELETED: 3, MOVED: 0, UNCHANGED: 1 },
+      changes: [
+        {
+          entityType: 'BASIC_STEP',
+          logicalKey: 'step-1',
+          changeType: 'UNCHANGED',
+          label: 'Existing basic step',
+          fields: [],
+        },
+        {
+          entityType: 'PERFORMER',
+          logicalKey: 'performer-added',
+          changeType: 'ADDED',
+          label: 'Floorhand',
+          fields: [],
+          newPosition: 'step-1:1',
+        },
+        {
+          entityType: 'PERFORMER',
+          logicalKey: 'performer-deleted',
+          changeType: 'DELETED',
+          label: 'Pumpman',
+          fields: [],
+          oldPosition: 'step-1:1',
+        },
+        {
+          entityType: 'SUPERVISOR',
+          logicalKey: 'supervisor-added',
+          changeType: 'ADDED',
+          label: 'Driller',
+          fields: [],
+          newPosition: 'step-1:1',
+        },
+        {
+          entityType: 'SUPERVISOR',
+          logicalKey: 'supervisor-deleted',
+          changeType: 'DELETED',
+          label: 'Toolpusher',
+          fields: [],
+          oldPosition: 'step-1:1',
+        },
+        {
+          entityType: 'TOOL',
+          logicalKey: 'tool-deleted',
+          changeType: 'DELETED',
+          label: 'Hand tool',
+          fields: [],
+          oldPosition: 'step-1:1',
+        },
+      ],
+    });
+
+    renderEditor();
+
+    const performerCell = (await screen.findByRole('button', {
+      name: /Select performers \(1\)/,
+    })).closest('td');
+    const supervisorCell = screen
+      .getByRole('button', { name: /Select supervisors \(1\)/ })
+      .closest('td');
+    const toolCell = screen.getByRole('button', { name: /Select tools \(0\)/ }).closest('td');
+
+    expect(performerCell).toHaveClass('worksheet-cell--changed');
+    expect(supervisorCell).toHaveClass('worksheet-cell--changed');
+    expect(toolCell).toHaveClass('worksheet-cell--changed');
+    expect(screen.getByText('Floorhand').closest('.ant-tag')).toHaveClass(
+      'assignment-value--added',
+    );
+    expect(screen.getByText('Driller').closest('.ant-tag')).toHaveClass('assignment-value--added');
+    expect(screen.getByText('Pumpman').closest('.ant-tag')).toHaveClass(
+      'assignment-value--deleted',
+    );
+    expect(screen.getByText('Toolpusher').closest('.ant-tag')).toHaveClass(
+      'assignment-value--deleted',
+    );
+    expect(screen.getByText('Hand tool').closest('.ant-tag')).toHaveClass(
+      'assignment-value--deleted',
+    );
+  });
+
+  it('keeps a persisted Task visible as a faded tombstone immediately after Delete', async () => {
+    const user = userEvent.setup();
+    const value = draft();
+    value.baseVersionId = '199';
+    value.tasks = [
+      {
+        id: '300',
+        logicalKey: 'task-1',
+        number: '1',
+        title: 'Task retained after delete',
+        displayOrder: 1,
+        hazards: [
+          {
+            id: '301',
+            logicalKey: 'hazard-1',
+            text: 'Existing hazard',
+            displayOrder: 1,
+            initialRisk: {},
+            residualRisk: {},
+            controls: [],
+            rowVersion: '1',
+          },
+        ],
+        rowVersion: '1',
+      },
+      {
+        id: '310',
+        logicalKey: 'task-2',
+        number: '2',
+        title: 'Task after deleted row',
+        displayOrder: 2,
+        hazards: [
+          {
+            id: '311',
+            logicalKey: 'hazard-2',
+            text: 'Following hazard',
+            displayOrder: 1,
+            initialRisk: {},
+            residualRisk: {},
+            controls: [],
+            rowVersion: '1',
+          },
+        ],
+        rowVersion: '1',
+      },
+    ];
+    vi.mocked(jsaApi.detail).mockResolvedValue(value);
+    vi.mocked(versioningApi.compare).mockResolvedValue({
+      jsaId: '100',
+      baseVersionId: '199',
+      workingVersionId: '200',
+      summary: { ADDED: 0, MODIFIED: 0, DELETED: 0, MOVED: 0, UNCHANGED: 4 },
+      changes: [
+        {
+          entityType: 'TASK',
+          logicalKey: 'task-1',
+          changeType: 'UNCHANGED',
+          label: 'Task retained after delete',
+          fields: [],
+        },
+        {
+          entityType: 'HAZARD',
+          logicalKey: 'hazard-1',
+          changeType: 'UNCHANGED',
+          label: 'Existing hazard',
+          fields: [],
+        },
+        {
+          entityType: 'TASK',
+          logicalKey: 'task-2',
+          changeType: 'UNCHANGED',
+          label: 'Task after deleted row',
+          fields: [],
+        },
+        {
+          entityType: 'HAZARD',
+          logicalKey: 'hazard-2',
+          changeType: 'UNCHANGED',
+          label: 'Following hazard',
+          fields: [],
+        },
+      ],
+    });
+
+    renderEditor();
+    expect(screen.queryByText('Added since the Published Version')).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Expand' }));
+    await screen.findByText('Added since the Published Version');
+    expect(screen.getByText('Changed since the Published Version')).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: 'Delete Task' })[0]!);
+
+    expect(screen.queryByDisplayValue('Task retained after delete')).not.toBeInTheDocument();
+    const deletedRow = screen.getByLabelText('Deleted row: Task retained after delete');
+    expect(deletedRow).toHaveClass('worksheet-deleted-grid-row');
+    expect(deletedRow).toHaveTextContent('Existing hazard');
+    expect(deletedRow.children).toHaveLength(11);
+    const followingRow = screen.getByDisplayValue('Task after deleted row').closest('tr');
+    expect(followingRow).not.toBeNull();
+    expect(
+      deletedRow.compareDocumentPosition(followingRow!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('renders all creation sections together without a tab workflow', async () => {
@@ -494,7 +911,7 @@ describe('JsaDraftEditor single-page worksheet', () => {
     expect(screen.getByText(/TASK \/ HAZARD \/ CONTROL ASSESSMENT/)).toBeInTheDocument();
     expect(screen.getByText(/BASIC JOB STEP/)).toBeInTheDocument();
     expect(screen.getByText('ATTACHMENTS')).toBeInTheDocument();
-    expect(screen.getByText('Hard hat')).toBeInTheDocument();
+    expect(await screen.findByText('Hard hat')).toBeInTheDocument();
     expect(screen.getByText('Gloves')).toBeInTheDocument();
     expect(screen.queryByText('Not selected')).not.toBeInTheDocument();
     expect(screen.getByText('Roustabout')).toBeInTheDocument();

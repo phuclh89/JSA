@@ -39,7 +39,7 @@ function StandardWorkflowQueue({ kind }: { kind: Exclude<keyof typeof labels, 'p
   const [selectedJsaId, setSelectedJsaId] = useState<string>();
   const [department, setDepartment] = useState('all');
   const [keyword, setKeyword] = useState('');
-  const [searchField, setSearchField] = useState<JsaListSearchField>('all');
+  const [searchField, setSearchField] = useState<JsaListSearchField>('ALL');
   const query = useQuery({
     queryKey: ['workflow-queue', kind, selectedRigId ?? 'all'],
     queryFn: () => workflowApi.queue(kind, selectedRigId),
@@ -60,16 +60,13 @@ function StandardWorkflowQueue({ kind }: { kind: Exclude<keyof typeof labels, 'p
     return (query.data ?? []).filter((item) => {
       if (department !== 'all' && item.departmentCode !== department) return false;
       if (!term) return true;
-      const fields: Record<Exclude<JsaListSearchField, 'all'>, string> = {
-        number: item.jsaNumber,
-        job: item.jobTitle ?? '',
-        rig: `${item.rigCode} ${item.rigName}`,
-        department: `${item.departmentCode} ${item.departmentName}`,
-        status: `${item.versionStatus} ${item.currentStepName ?? ''}`,
+      const fields: Partial<Record<JsaListSearchField, string>> = {
+        JSA_NUMBER: item.jsaNumber,
+        JOB_TITLE: item.jobTitle ?? '',
       };
-      return searchField === 'all'
+      return searchField === 'ALL'
         ? Object.values(fields).some((value) => value.toLocaleLowerCase().includes(term))
-        : fields[searchField].toLocaleLowerCase().includes(term);
+        : (fields[searchField] ?? '').toLocaleLowerCase().includes(term);
     });
   }, [department, keyword, query.data, searchField]);
   const selectedItem = filteredItems.find((item) => item.jsaId === selectedJsaId);

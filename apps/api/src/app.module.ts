@@ -19,6 +19,10 @@ import { JsaDraftModule } from './modules/jsa-draft/jsa-draft.module';
 import { JsaWorkflowModule } from './modules/jsa-workflow/jsa-workflow.module';
 import { AccessAdministrationModule } from './modules/access-administration/access-administration.module';
 import { AttachmentLibraryModule } from './modules/attachment-library/attachment-library.module';
+import { JsaVersioningModule } from './modules/jsa-versioning/jsa-versioning.module';
+import { JsaBrowseModule } from './modules/jsa-browse/jsa-browse.module';
+import { JsaCopyModule } from './modules/jsa-copy/jsa-copy.module';
+import { JsaTranslationModule } from './modules/jsa-translation/jsa-translation.module';
 
 @Module({
   imports: [
@@ -38,6 +42,10 @@ import { AttachmentLibraryModule } from './modules/attachment-library/attachment
     JsaWorkflowModule,
     AccessAdministrationModule,
     AttachmentLibraryModule,
+    JsaVersioningModule,
+    JsaBrowseModule,
+    JsaCopyModule,
+    JsaTranslationModule,
     HealthModule,
     SystemModule,
   ],

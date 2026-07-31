@@ -9,6 +9,7 @@ import { ApprovalProgress } from './approval-progress';
 import { ApprovalHistory } from './approval-history';
 import { JsaDraftEditor } from './jsa-draft-editor';
 import './workflow.css';
+import { VersionComparePanel } from './version-compare-panel';
 export function WorkflowReviewPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -107,9 +108,32 @@ export function WorkflowReviewPage() {
           </div>
           <Tag>{detail.versionStatus}</Tag>
         </div>
-        <JsaDraftEditor embedded forceReadOnly />
+        <JsaDraftEditor embedded forceReadOnly reviewComparison />
       </section>
       <ApprovalHistory actions={detail.actions} />
+      {detail.baseVersionId ? (
+        <VersionComparePanel
+          jsaId={id}
+          workflowReview
+          defaultCollapsed
+          legend={
+            <div className="worksheet-change-legend" role="note">
+              <span>
+                <i className="worksheet-change-swatch worksheet-change-swatch--added" />
+                Added since the Published Version
+              </span>
+              <span>
+                <i className="worksheet-change-swatch worksheet-change-swatch--changed" />
+                Changed since the Published Version
+              </span>
+              <span>
+                <i className="worksheet-change-swatch worksheet-change-swatch--deleted" />
+                Deleted from the Published Version
+              </span>
+            </div>
+          }
+        />
+      ) : null}
       <Modal
         title={
           dialog === 'return'

@@ -39,6 +39,8 @@ The environment-specific `pnpm db:seed:legacy-risk-matrix` command creates the c
 
 `pnpm db:seed:pv-drilling-tools` idempotently creates or aligns the confirmed 53 Tool names at `GLOBAL` scope under the Global `JSA_TOOLS — JSA Tools` category, using `TOOL_SEED_ACTOR` for the audit actor. Existing active Tools matched by stable code or exact name retain their Tool IDs; duplicate active scoped copies are soft-deactivated. Run `pnpm db:verify:pv-drilling-tools` to verify the exact category/code/name/order and null Site/Rig/Department ownership.
 
+`pnpm db:seed:translation-languages` idempotently creates or aligns the active Global Translation targets Vietnamese (`vi-VN`), Malay (Malaysia) (`ms-MY`), Indonesian (`id-ID`), and Malay (Brunei) (`ms-BN`), using `LANGUAGE_SEED_ACTOR` for the audit actor. Existing active rows matched by governed language code or locale retain their IDs; duplicate active scoped copies are soft-deactivated. Run `pnpm db:verify:translation-languages` to verify the exact code/name/locale/order and Global ownership.
+
 ## Phase 3 migration and verification
 
 Migration `005_create_jsa_draft_core.sql` creates the 13-table JSA Draft/version aggregate and 14 explicit sequences. Its rollback removes Phase 3 range registrations, drops cross-pointer constraints, then drops children, versions, Master, and sequences in dependency order. It does not touch Phase 1/2 business objects.
@@ -77,6 +79,8 @@ After LDAP and Phase 4.5 configuration are available, `pnpm db:seed:ldap-admin` 
 
 `pnpm db:seed:uat-full-approval` is an explicit non-production fixture for single-user workflow testing. It defaults `SEED_UAT_APPROVER_USERNAME` to `phuclh`, requires the existing active user, `SYSTEM_ADMIN` Role, Site `VIEW/ACT`, migration 007, and configured Site sequence ranges. It creates the seven `DEV_*` Phase 4 permissions when absent, grants every active Permission to `SYSTEM_ADMIN`, creates one active site-wide four-step workflow and binding, assigns all four approver workflow Roles to the target user, and writes one immutable audit event. A second run returns `SKIPPED`; production is rejected. Verify with `pnpm db:verify:uat-full-approval`.
 
+`pnpm db:seed:uat-translation-access` is the matching non-production Translation fixture. It defaults `SEED_UAT_TRANSLATION_USERNAME` to `phuclh`, creates and grants the five `DEV_JSA_TRANSLATION_*`/`DEV_JSA_TRANSLATE` permissions through `SYSTEM_ADMIN`, and ensures Site-scoped `OIM`, `TRANSLATOR`, and `STC` workflow-role assignments. It requires the existing active user and Site `VIEW/ACT` scope, writes immutable audit evidence, is idempotent, and is forbidden in production. Verify with `pnpm db:verify:uat-translation-access`.
+
 ## Development own-JSA cleanup
 
 `pnpm db:cleanup:own-test-jsas` deletes only the JSA aggregate, workflow runtime rows, and JSA-targeted notifications belonging to `JSA_CLEANUP_USERNAME` (default `phuclh`). It preserves other users' JSAs and all users, authorization, organization, Matrix, workflow configuration, numbering configuration, and Attachment Library records. The script is forbidden in production, refuses any target containing a Published Version, requires `CONFIRM_OWN_JSA_CLEANUP` to equal the target username, and commits all deletions atomically.
@@ -86,3 +90,29 @@ After LDAP and Phase 4.5 configuration are available, `pnpm db:seed:ldap-admin` 
 Migration 012 creates the governed folder, logical asset, and immutable asset-version metadata model and links exact file versions to `JSA_VERSION_ATTACHMENT`. File bytes remain outside Oracle.
 
 After applying migration 012, set `LOCAL_SITE_ID` and `ATTACHMENT_BOOTSTRAP_ACTOR`, then run `pnpm db:bootstrap:attachments`. The command is idempotent, configures only the three attachment sequences from the site's existing approved range, and refuses partial configuration. `pnpm db:verify` includes the migration, tables, sequences, and JSA snapshot-link columns.
+
+## Phase 5 migration and verification
+
+`014_add_jsa_revision_lifecycle.sql` adds checkout identity/time metadata, Base/current/working indexes, `SUPERSEDED`, and revision-aware immutability. `015_harden_jsa_revision_immutability.sql` limits the Published-to-Superseded transition to lifecycle metadata and recompiles every dependent child trigger invalidated by the procedure replacement. Neither migration creates or seeds business data or a new sequence.
+
+Run `pnpm db:up`, `pnpm db:status`, `pnpm db:verify`, and `pnpm db:verify:phase5`. The Phase 5 verifier checks both migration metadata and all 13 immutable-version guards. It exercises Published-to-Superseded behavior inside a rolled-back transaction when a Published fixture exists and explicitly reports `SKIPPED_NO_PUBLISHED_FIXTURE` otherwise.
+
+Development rollback is compensating DDL. Roll back 015 before 014; rollback 014 refuses to proceed while any Superseded row exists, restores the prior status constraints and trigger behavior, and recompiles the child guards.
+
+## Phase 6 migration and verification
+
+Migration 016 creates `JSA_USER_FAVORITE`, its explicit sequence, Favorite lookup indexes, and Browse-supporting Version indexes. It creates no Permission, Role grant, Site, user, JSA, or other business seed.
+
+Run `pnpm db:bootstrap:phase6` with `LOCAL_SITE_ID` and `PHASE6_BOOTSTRAP_ACTOR` to position/register only `SEQ_JSA_USER_FAVORITE`. Run `pnpm db:verify:phase6` for real Oracle metadata, a rolled-back Published fixture, Favorite uniqueness, escaped-wildcard search, paging, and query-plan evidence. Rollback 016 removes its sequence-range registration before dropping its table, sequence, and indexes.
+
+## Phase 6C migration and verification
+
+Migration 017 creates `JSA_COPY_PROVENANCE`, `SEQ_JSA_COPY_PROVENANCE`, source/time indexes, exact source and destination Version foreign keys, actor-scoped request-key uniqueness, and an immutable update/delete trigger. It creates no Permission, Role grant, organization, Matrix, JSA, or reference-data seed.
+
+Run `pnpm db:bootstrap:phase6c` with `LOCAL_SITE_ID` and `PHASE6C_BOOTSTRAP_ACTOR` to position/register only the provenance sequence. Run `pnpm db:verify:phase6c` to check metadata, Site range, exact destination-Version lineage, immutability, and idempotency uniqueness with a transaction-rolled-back fixture. Rollback 017 fails closed if provenance exists; empty non-production schemas remove the Site sequence registration and Phase 6C objects.
+
+## Phase 7 migration and verification
+
+Migration 018 creates the Translation header, structured segment inventory, append-only action evidence, three Site-ranged sequences, lookup indexes, and database mutability guards. It seeds no Permission, Role, assignment, language, user, or JSA.
+
+Run `pnpm db:bootstrap:phase7` with `LOCAL_SITE_ID` and `PHASE7_BOOTSTRAP_ACTOR`, then `pnpm db:verify:phase7`. Rollback is fail-closed when Translation history exists; Oracle DDL remains compensating rather than transactional.

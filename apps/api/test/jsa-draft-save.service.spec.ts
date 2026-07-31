@@ -52,7 +52,29 @@ describe('JsaDraftService aggregate save', () => {
         versionRowVersion: '8',
         jobTitle: 'Updated JSA',
         prompts: [],
-        tasks: [],
+        tasks: [
+          {
+            ref: 'task-new',
+            title: 'Task',
+            displayOrder: 1,
+            hazards: [
+              {
+                ref: 'hazard-new',
+                text: 'Hazard',
+                displayOrder: 1,
+                initialRisk: {},
+                residualRisk: {},
+                controls: [
+                  {
+                    ref: 'control-placeholder',
+                    text: '',
+                    displayOrder: 1,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
         coverage: [{ ref: 'legacy', promptRef: 'prompt', hazardRef: 'hazard' }],
         basicSteps: [],
         procedureReferences: [
@@ -85,6 +107,15 @@ describe('JsaDraftService aggregate save', () => {
         versionRowVersion: '9',
         coverage: [],
         procedureReferences: [],
+        tasks: [
+          expect.objectContaining({
+            hazards: [
+              expect.objectContaining({
+                controls: [],
+              }),
+            ],
+          }),
+        ],
       }),
       'creator',
     );

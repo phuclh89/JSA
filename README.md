@@ -1,6 +1,6 @@
 # JSAMS
 
-Job Safety Analysis Management System. Phases 0–4.5 provide Oracle/site security, governed master data and Rig-specific Risk Matrices, one-screen JSA authoring, approval workflow, immutable initial publishing, and governed User Access Administration. Translation, annual review, and reporting remain future phases.
+Job Safety Analysis Management System. Phases 0–7 provide Oracle/site security, governed master data and Rig-specific Risk Matrices, one-screen JSA authoring, approval workflow, governed User Access Administration, Published revision replacement, Browse/Favorites, controlled Cross-Rig Copy, and governed Translation Management. Annual review and reporting remain future phases.
 
 ## Prerequisites
 
@@ -20,8 +20,9 @@ Job Safety Analysis Management System. Phases 0–4.5 provide Oracle/site securi
 8. Configure `ATTACHMENT_STORAGE_ROOT`, then run `pnpm db:bootstrap:attachments` with `LOCAL_SITE_ID` and an approved `ATTACHMENT_BOOTSTRAP_ACTOR` after migration 012.
 9. When the approved LDAP administrator is `phuclh`, run the idempotent `pnpm db:seed:ldap-admin`.
 10. For development/UAT only, run `pnpm db:seed:uat-full-approval` to give the configured test user all active permissions and the complete four-step approval path.
-11. Run `pnpm dev`, or run `start-jsams.cmd` on Windows to open the API on port 3000 and the frontend on port 5173 in separate command windows.
-12. Open `http://localhost:5173`; API Swagger is at `http://localhost:3000/docs`.
+11. After migration 016, run `pnpm db:bootstrap:phase6` with an approved actor. After migration 017, run `pnpm db:bootstrap:phase6c` with `PHASE6C_BOOTSTRAP_ACTOR`. After migration 018, run `pnpm db:bootstrap:phase7` with `PHASE7_BOOTSTRAP_ACTOR`.
+12. Run `pnpm dev`, or run `start-jsams.cmd` on Windows to open the API on port 3000 and the frontend on port 5173 in separate command windows.
+13. Open `http://localhost:5173`; API Swagger is at `http://localhost:3000/docs`.
 
 The API validates configuration before startup and opens one Oracle pool. Development authentication uses `X-Dev-User` only as an enterprise-identity hint; it must resolve an active `SYS_USER` and is rejected in production. LDAP mode validates the submitted enterprise credentials against internal Active Directory, creates a signed HttpOnly JSAMS session, and resolves the existing active application user plus its independent roles, permissions, overrides, scopes, and workflow assignments. LDAP authentication alone does not grant application access. JSAMS receives the password only during login and never stores, hashes, caches, or logs it. See [deployment](docs/deployment.md) and [database guide](database/README.md).
 
@@ -55,7 +56,7 @@ Common diagnostics: `DPI-1047` means client DLL loading failed; `ORA-01017` inva
 
 `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` run across the workspace.
 
-Database verification commands include `pnpm db:verify`, `pnpm db:verify:phase2`, `pnpm db:verify:phase3`, `pnpm db:verify:phase4`, and `pnpm db:verify:phase45`. See [database schema](docs/database-schema.md) for the model and [deployment](docs/deployment.md) for the no-seed configuration policy.
+Database verification commands include `pnpm db:verify`, `pnpm db:verify:phase2`, `pnpm db:verify:phase3`, `pnpm db:verify:phase4`, `pnpm db:verify:phase45`, `pnpm db:verify:phase5`, `pnpm db:verify:phase6`, `pnpm db:verify:phase6c`, and `pnpm db:verify:phase7`. See [database schema](docs/database-schema.md) for the model and [deployment](docs/deployment.md) for the no-seed configuration policy.
 
 ## Phase 3 JSA Draft
 
@@ -80,3 +81,29 @@ Production remains fail-closed until all seven workflow permission mappings, act
 All `/api/v1/access-administration/*` routes and matching `/operations/access/*` screens require effective `SYSTEM_ADMIN`; this permission never grants JSA approval. Administrators can register existing enterprise identities, govern application Roles and existing Permissions, user Roles, explicit ALLOW/DENY overrides, Site/Rig/Department scopes, and workflow-role assignments, and inspect effective access, approver resolution, UAT readiness, pending-task impact, and immutable access audit history.
 
 LDAP connection, bind strategy, accepted domain forms, and attribute mappings are explicit environment configuration. The confirmed runtime strategy is Direct Bind; service-account search remains an optional deployment strategy. Active Directory `objectGUID` is the preferred stable identity key; username fallback is only a controlled migration aid. JSAMS stores no enterprise password, does not provision or administer AD accounts, and does not implement impersonation.
+
+## Phase 5 Published JSA Revision Lifecycle
+
+Phase 5 keeps the current Published Version operational while an authorized user checks out a complete Working Version snapshot. The snapshot receives new physical IDs while retaining stable logical keys, exact attachment-library version/checksum references, parent relationships, and the Base Version link. A Matrix reassignment is detected at checkout and clears copied risk selections for explicit reassessment.
+
+Update, Compare/History, and Undo Checkout use three independent fail-closed permission mappings. Compare is calculated on demand from normalized Base and Working snapshots and classifies added, modified, deleted, moved, and unchanged entities. Final approval atomically marks the prior current version `SUPERSEDED`, publishes the Working Version, advances the Master current pointer, and clears checkout state without allocating a second official JSA number.
+
+## Phase 6 Browse/Search and Favorites
+
+All operational JSA lists use one server-side Browse contract with explicit search fields, structured filters, stable Oracle paging, allowlisted sorting, actor/data-scope predicates, and separate Current/Working visibility. `/jsa/all` returns one row per visible Master, and `/jsa/favorites` contains only the user's still-visible Current Published JSAs.
+
+Favorite/Unfavorite is an idempotent Master-level preference and never grants JSA access. Configure the approved `JSA_PERMISSION_FAVORITE`, run `pnpm db:bootstrap:phase6`, and verify with `pnpm db:verify:phase6`; migration 016 seeds no speculative Permission or grant.
+
+## Phase 6C Cross-Rig Copy
+
+Cross-Rig Copy creates a new destination-owned JSA Master and Draft Working Version from a source Current Published Version. It requires independently configured View, Create, and Copy permissions, source VIEW scope, destination ACT scope, the configured local authoritative Site, a different active Rig, an active Department, an effective complete Matrix, and English source language.
+
+The copy receives new physical IDs and logical keys. It includes the approved worksheet structure and maps prompts, positions, and tools by stable code; missing or ambiguous safety-critical mappings block creation. Risk is retained only when the exact Matrix Version matches, otherwise every risk selection is cleared for reassessment. Official number, workflow/approval history, procedures, prompt coverage, Favorites, notifications, and attachment associations/binaries are excluded.
+
+Migration 017 stores immutable provenance and actor-scoped idempotency evidence. Configure an approved existing `JSA_PERMISSION_COPY`, run `pnpm db:bootstrap:phase6c`, and verify with `pnpm db:verify:phase6c`; no Permission or grant is seeded.
+
+## Phase 7 Translation Management
+
+Translations are separate governed objects tied to one exact Current Published English JSA Version and one active non-English language. OIM assignment, explicit Translator work, one snapshotted STC reviewer, Return/resubmit cycles, publication, replacement-driven Outdated state, and empty-target Refresh are handled without mutating source JSA content or pointers.
+
+The workspace is `/jsa/translations`; Published/Favorites/All expose Assign Translation only when the five independent Translation permissions, JSA View, workflow role, local ownership, and scope checks pass. Browser printing is available only for a Published Translation whose source remains the Current Published Version. Configure the five Phase 7 permission mappings and operational OIM/TRANSLATOR/STC assignments; migration and bootstrap create no Permission, Role, user, language, or assignment seed.

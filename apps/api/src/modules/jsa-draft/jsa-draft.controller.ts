@@ -46,6 +46,18 @@ export class JsaDraftController {
   @Get(':id/print') printDetail(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.printDetail(id, user);
   }
+  @Get(':id/current')
+  currentDetail(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.currentDetail(id, user);
+  }
+  @Get(':id/versions/:versionId')
+  versionDetail(
+    @Param('id') id: string,
+    @Param('versionId') versionId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.versionDetail(id, versionId, user);
+  }
   @Get(':id') detail(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.detail(id, user);
   }

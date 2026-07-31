@@ -58,6 +58,10 @@ export class JsaWorkflowController {
   @Get(':id/preview') preview(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.preview(id, user);
   }
+  @Get(':id/review-compare')
+  reviewCompare(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.reviewCompare(id, user);
+  }
   @Post(':id/submit') submit(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.submit(id, user);
   }

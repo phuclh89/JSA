@@ -47,8 +47,8 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
        JOIN SYS_SITE S ON S.SITE_ID=M.OWNER_SITE_ID
        JOIN SYS_RIG R ON R.RIG_ID=M.RIG_ID
        JOIN SYS_DEPARTMENT D ON D.DEPARTMENT_ID=M.DEPARTMENT_ID
-       WHERE M.CREATOR_USER_ID=:userId
-         AND M.LIFECYCLE_STATUS='DRAFT'
+       WHERE NVL(M.CHECKED_OUT_BY_USER_ID,M.CREATOR_USER_ID)=:userId
+         AND M.LIFECYCLE_STATUS IN ('DRAFT','PUBLISHED')
          AND V.VERSION_STATUS IN ('DRAFT','RETURNED')
          AND (:rigId IS NULL OR M.RIG_ID=:rigId)
          AND EXISTS(
@@ -186,7 +186,16 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
   ): Promise<DraftAccessRecord | undefined> {
     assertOracleId(jsaId, 'jsaId');
     const result = await context.connection.execute<Row>(
-      `SELECT TO_CHAR(M.JSA_ID) JSA_ID,TO_CHAR(V.JSA_VERSION_ID) VERSION_ID,TO_CHAR(M.OWNER_SITE_ID) SITE_ID,TO_CHAR(M.RIG_ID) RIG_ID,TO_CHAR(M.DEPARTMENT_ID) DEPARTMENT_ID,TO_CHAR(M.CREATOR_USER_ID) CREATOR_USER_ID,M.LIFECYCLE_STATUS STATUS,V.VERSION_STATUS,TO_CHAR(M.ROW_VERSION) ROW_VERSION,TO_CHAR(V.ROW_VERSION) VERSION_ROW_VERSION FROM JSA_MASTER M JOIN JSA_VERSION V ON V.JSA_VERSION_ID=M.WORKING_VERSION_ID AND V.JSA_ID=M.JSA_ID WHERE M.JSA_ID=:jsaId${lock ? ' FOR UPDATE' : ''}`,
+      `SELECT TO_CHAR(M.JSA_ID) JSA_ID,TO_CHAR(V.JSA_VERSION_ID) VERSION_ID,
+       TO_CHAR(M.CURRENT_VERSION_ID) CURRENT_VERSION_ID,TO_CHAR(V.BASE_VERSION_ID) BASE_VERSION_ID,
+       TO_CHAR(M.CHECKED_OUT_BY_USER_ID) CHECKED_OUT_BY_USER_ID,
+       TO_CHAR(M.OWNER_SITE_ID) SITE_ID,TO_CHAR(M.RIG_ID) RIG_ID,
+       TO_CHAR(M.DEPARTMENT_ID) DEPARTMENT_ID,TO_CHAR(M.CREATOR_USER_ID) CREATOR_USER_ID,
+       M.LIFECYCLE_STATUS STATUS,V.VERSION_STATUS,TO_CHAR(M.ROW_VERSION) ROW_VERSION,
+       TO_CHAR(V.ROW_VERSION) VERSION_ROW_VERSION
+       FROM JSA_MASTER M JOIN JSA_VERSION V
+         ON V.JSA_VERSION_ID=M.WORKING_VERSION_ID AND V.JSA_ID=M.JSA_ID
+       WHERE M.JSA_ID=:jsaId${lock ? ' FOR UPDATE' : ''}`,
       { jsaId },
       options,
     );
@@ -199,6 +208,9 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
           rigId: r.RIG_ID,
           departmentId: r.DEPARTMENT_ID,
           creatorUserId: r.CREATOR_USER_ID,
+          ...(r.CURRENT_VERSION_ID ? { currentVersionId: r.CURRENT_VERSION_ID } : {}),
+          ...(r.BASE_VERSION_ID ? { baseVersionId: r.BASE_VERSION_ID } : {}),
+          ...(r.CHECKED_OUT_BY_USER_ID ? { checkedOutByUserId: r.CHECKED_OUT_BY_USER_ID } : {}),
           status: r.STATUS,
           versionStatus: r.VERSION_STATUS,
           rowVersion: r.ROW_VERSION,
@@ -224,7 +236,10 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
     );
     if (result.rowsAffected !== 1) throw new OptimisticLockError();
     const master = await context.connection.execute(
-      `UPDATE JSA_MASTER SET UPDATED_SITE_ID=OWNER_SITE_ID,UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1 WHERE JSA_ID=:jsaId AND ROW_VERSION=:rowVersion AND LIFECYCLE_STATUS='DRAFT'`,
+      `UPDATE JSA_MASTER SET UPDATED_SITE_ID=OWNER_SITE_ID,UPDATED_AT=SYSTIMESTAMP,
+       UPDATED_BY=:actor,ROW_VERSION=ROW_VERSION+1
+       WHERE JSA_ID=:jsaId AND ROW_VERSION=:rowVersion
+         AND LIFECYCLE_STATUS IN ('DRAFT','PUBLISHED')`,
       { actor, jsaId: access.jsaId, rowVersion: input.rowVersion },
     );
     if (master.rowsAffected !== 1) throw new OptimisticLockError();
@@ -587,8 +602,11 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
   async load(
     context: OracleTransactionContext,
     jsaId: string,
+    current = false,
+    requestedVersionId?: string,
   ): Promise<DraftLoadRecord | undefined> {
     assertOracleId(jsaId, 'jsaId');
+    if (requestedVersionId) assertOracleId(requestedVersionId, 'versionId');
     const h = await context.connection.execute<Row>(
       `SELECT TO_CHAR(M.JSA_ID) JSA_ID,TO_CHAR(V.JSA_VERSION_ID) VERSION_ID,V.VERSION_NUMBER,M.JSA_NUMBER,M.LIFECYCLE_STATUS,V.VERSION_STATUS,
        TO_CHAR(M.OWNER_SITE_ID) OWNER_SITE_ID,S.SITE_CODE,S.SITE_NAME,
@@ -597,15 +615,30 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
        TO_CHAR(V.JOB_TYPE_ID) JOB_TYPE_ID,TO_CHAR(V.MATRIX_VERSION_ID) MATRIX_VERSION_ID,TO_CHAR(V.LANGUAGE_ID) LANGUAGE_ID,
        L.LANGUAGE_CODE,L.LANGUAGE_NAME,TO_CHAR(V.PUBLISHED_AT,'YYYY-MM-DD"T"HH24:MI:SS.FF3') PUBLISHED_AT,
        V.JOB_TITLE,V.JOB_DESCRIPTION,V.PTW_REQUIRED_FLAG,V.PTW_REFERENCE,
-       TO_CHAR(M.CREATOR_USER_ID) CREATOR_USER_ID,TO_CHAR(M.ROW_VERSION) ROW_VERSION,TO_CHAR(V.ROW_VERSION) VERSION_ROW_VERSION
+       TO_CHAR(M.CREATOR_USER_ID) CREATOR_USER_ID,
+       TO_CHAR(M.CURRENT_VERSION_ID) CURRENT_VERSION_ID,
+       TO_CHAR(M.WORKING_VERSION_ID) WORKING_VERSION_ID,
+       (SELECT VERSION_STATUS FROM JSA_VERSION WV
+        WHERE WV.JSA_VERSION_ID=M.WORKING_VERSION_ID) WORKING_VERSION_STATUS,
+       TO_CHAR(V.BASE_VERSION_ID) BASE_VERSION_ID,
+       TO_CHAR(M.CHECKED_OUT_BY_USER_ID) CHECKED_OUT_BY_USER_ID,
+       M.CHECKED_OUT_BY_USERNAME,M.CHECKED_OUT_BY_DISPLAY_NAME,
+       TO_CHAR(M.CHECKED_OUT_AT,'YYYY-MM-DD"T"HH24:MI:SS.FF3') CHECKED_OUT_AT,
+       TO_CHAR(M.ROW_VERSION) ROW_VERSION,TO_CHAR(V.ROW_VERSION) VERSION_ROW_VERSION
        FROM JSA_MASTER M
-       JOIN JSA_VERSION V ON V.JSA_VERSION_ID=NVL(M.WORKING_VERSION_ID,M.CURRENT_VERSION_ID)
+       JOIN JSA_VERSION V ON V.JSA_ID=M.JSA_ID AND V.JSA_VERSION_ID=${
+         requestedVersionId
+           ? ':requestedVersionId'
+           : current
+             ? 'M.CURRENT_VERSION_ID'
+             : 'NVL(M.WORKING_VERSION_ID,M.CURRENT_VERSION_ID)'
+       }
        JOIN SYS_SITE S ON S.SITE_ID=M.OWNER_SITE_ID
        JOIN SYS_RIG R ON R.RIG_ID=M.RIG_ID AND R.SITE_ID=M.OWNER_SITE_ID
        JOIN SYS_DEPARTMENT D ON D.DEPARTMENT_ID=M.DEPARTMENT_ID AND D.RIG_ID=M.RIG_ID AND D.SITE_ID=M.OWNER_SITE_ID
        LEFT JOIN SYS_LANGUAGE L ON L.LANGUAGE_ID=V.LANGUAGE_ID
        WHERE M.JSA_ID=:jsaId`,
-      { jsaId },
+      { jsaId, ...(requestedVersionId ? { requestedVersionId } : {}) },
       options,
     );
     const r = h.rows?.[0];
@@ -779,6 +812,16 @@ export class OracleJsaDraftRepository implements JsaDraftRepository {
       ptwRequired: r.PTW_REQUIRED_FLAG === 'Y',
       ...(r.PTW_REFERENCE ? { ptwReference: r.PTW_REFERENCE } : {}),
       creatorUserId: r.CREATOR_USER_ID,
+      ...(r.CURRENT_VERSION_ID ? { currentVersionId: r.CURRENT_VERSION_ID } : {}),
+      ...(r.WORKING_VERSION_ID ? { workingVersionId: r.WORKING_VERSION_ID } : {}),
+      ...(r.WORKING_VERSION_STATUS ? { workingVersionStatus: r.WORKING_VERSION_STATUS } : {}),
+      ...(r.BASE_VERSION_ID ? { baseVersionId: r.BASE_VERSION_ID } : {}),
+      ...(r.CHECKED_OUT_BY_USER_ID ? { checkedOutByUserId: r.CHECKED_OUT_BY_USER_ID } : {}),
+      ...(r.CHECKED_OUT_BY_USERNAME ? { checkedOutByUsername: r.CHECKED_OUT_BY_USERNAME } : {}),
+      ...(r.CHECKED_OUT_BY_DISPLAY_NAME
+        ? { checkedOutByDisplayName: r.CHECKED_OUT_BY_DISPLAY_NAME }
+        : {}),
+      ...(r.CHECKED_OUT_AT ? { checkedOutAt: r.CHECKED_OUT_AT } : {}),
       rowVersion: r.ROW_VERSION,
       versionRowVersion: r.VERSION_ROW_VERSION,
     };

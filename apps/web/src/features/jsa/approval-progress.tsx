@@ -155,6 +155,7 @@ function statusLabel(status: JsaVersionStatus) {
     RETURNED: 'Returned',
     REJECTED: 'Rejected',
     PUBLISHED: 'Published',
+    SUPERSEDED: 'Superseded',
     CANCELLED: 'Cancelled',
   };
   return labels[status];

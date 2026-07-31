@@ -3,9 +3,10 @@ import {
   FileSearchOutlined,
   HistoryOutlined,
   PrinterOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Empty, Spin, Table, Tag, Typography } from 'antd';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Alert, Button, Empty, Modal, Spin, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -21,6 +22,9 @@ import {
 import { useRigContext } from './rig-context';
 import { workflowApi } from './workflow-api';
 import './published-jsa-page.css';
+import { versioningApi } from './versioning-api';
+import { VersionHistoryModal } from './version-history-modal';
+import type { ApiClientError } from '../../services/api-client';
 
 const publishedDateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'short',
@@ -32,9 +36,11 @@ export function PublishedJsaPage() {
   const { selectedRigId } = useRigContext();
   const [selectedJsaId, setSelectedJsaId] = useState<string>();
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const queryClient = useQueryClient();
   const [department, setDepartment] = useState('all');
   const [keyword, setKeyword] = useState('');
-  const [searchField, setSearchField] = useState<JsaListSearchField>('all');
+  const [searchField, setSearchField] = useState<JsaListSearchField>('ALL');
   const queue = useQuery({
     queryKey: ['workflow-queue', 'published', selectedRigId ?? 'all'],
     queryFn: () => workflowApi.queue('published', selectedRigId),
@@ -43,6 +49,25 @@ export function PublishedJsaPage() {
   const capabilities = useQuery({
     queryKey: ['jsa-capabilities'],
     queryFn: jsaApi.capabilities,
+  });
+  const versioningCapabilities = useQuery({
+    queryKey: ['jsa-versioning-capabilities'],
+    queryFn: versioningApi.capabilities,
+  });
+  const checkout = useMutation({
+    mutationFn: (id: string) => versioningApi.checkout(id),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['workflow-queue'] });
+      void queryClient.invalidateQueries({ queryKey: ['jsa-drafts'] });
+      void queryClient.invalidateQueries({ queryKey: ['jsa-navigation-counts'] });
+      message.success(
+        result.matrixChanged
+          ? 'Working Version created. Risk reassessment is required for the new Matrix.'
+          : 'Working Version created from the Current Published Version.',
+      );
+      navigate(`/jsa/${result.jsaId}/draft`);
+    },
+    onError: (error) => message.error((error as ApiClientError).message),
   });
 
   const departmentOptions = useMemo(
@@ -60,16 +85,13 @@ export function PublishedJsaPage() {
     return (queue.data ?? []).filter((item) => {
       if (department !== 'all' && item.departmentCode !== department) return false;
       if (!term) return true;
-      const fields: Record<Exclude<JsaListSearchField, 'all'>, string> = {
-        number: item.jsaNumber,
-        job: item.jobTitle ?? '',
-        rig: `${item.rigCode} ${item.rigName}`,
-        department: `${item.departmentCode} ${item.departmentName}`,
-        status: item.versionStatus,
+      const fields: Partial<Record<JsaListSearchField, string>> = {
+        JSA_NUMBER: item.jsaNumber,
+        JOB_TITLE: item.jobTitle ?? '',
       };
-      return searchField === 'all'
+      return searchField === 'ALL'
         ? Object.values(fields).some((value) => value.toLocaleLowerCase().includes(term))
-        : fields[searchField].toLocaleLowerCase().includes(term);
+        : (fields[searchField] ?? '').toLocaleLowerCase().includes(term);
     });
   }, [department, keyword, queue.data, searchField]);
   const selectedItem = filteredItems.find((item) => item.jsaId === selectedJsaId);
@@ -125,9 +147,9 @@ export function PublishedJsaPage() {
   const openSelected = (destination: 'view' | 'history' | 'print') => {
     if (!selectedItem) return;
     if (destination === 'view') {
-      navigate(`/jsa/${selectedItem.jsaId}/draft`);
+      navigate(`/jsa/${selectedItem.jsaId}/draft?source=current`);
     } else if (destination === 'history') {
-      navigate(`/jsa/${selectedItem.jsaId}/workflow`);
+      setHistoryOpen(true);
     } else {
       window.open(`/jsa/${selectedItem.jsaId}/print`, '_blank', 'noopener,noreferrer');
     }
@@ -142,6 +164,21 @@ export function PublishedJsaPage() {
       <JsaListRibbon
         ariaLabel="Published JSA operations"
         actions={[
+          {
+            key: 'update',
+            icon: <SyncOutlined />,
+            label: checkout.isPending ? 'Starting update' : 'Update JSA',
+            disabled: !selectedItem || !versioningCapabilities.data?.update || checkout.isPending,
+            onClick: () =>
+              selectedItem &&
+              Modal.confirm({
+                title: 'Start Update',
+                content:
+                  'A new Working Version will be checked out from the exact Current Published Version. Current remains operational.',
+                okText: 'Start Update',
+                onOk: () => checkout.mutateAsync(selectedItem.jsaId),
+              }),
+          },
           {
             key: 'create',
             icon: <FileAddOutlined />,
@@ -232,6 +269,11 @@ export function PublishedJsaPage() {
         )}
       </section>
       <JsaCreateModal open={createModalOpen} onClose={() => setCreateModalOpen(false)} />
+      <VersionHistoryModal
+        jsaId={selectedItem?.jsaId}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
     </main>
   );
 }

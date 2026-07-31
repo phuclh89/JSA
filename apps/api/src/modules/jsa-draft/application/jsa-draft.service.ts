@@ -7,6 +7,7 @@ import {
   ValidationError,
 } from '../../../common/errors/application-errors';
 import { OracleService } from '../../../common/oracle/oracle.service';
+import { assertOracleId } from '../../../common/oracle/oracle-id';
 import { DataScopeService } from '../../security/application/data-scope.service';
 import { SecurityAuditService } from '../../security/application/security-audit.service';
 import { RiskMatrixService } from '../../risk-matrix/application/risk-matrix.service';
@@ -120,8 +121,29 @@ export class JsaDraftService {
     );
   }
   async detail(id: string, user: AuthenticatedUser): Promise<JsaDraftDetail> {
+    return this.detailSource(id, user, false);
+  }
+  async currentDetail(id: string, user: AuthenticatedUser): Promise<JsaDraftDetail> {
+    return this.detailSource(id, user, true);
+  }
+  async versionDetail(
+    id: string,
+    versionId: string,
+    user: AuthenticatedUser,
+  ): Promise<JsaDraftDetail> {
+    assertOracleId(versionId, 'versionId');
+    return this.detailSource(id, user, false, versionId);
+  }
+  private async detailSource(
+    id: string,
+    user: AuthenticatedUser,
+    current: boolean,
+    versionId?: string,
+  ): Promise<JsaDraftDetail> {
     this.capabilities.require(user, 'view');
-    const raw = await this.oracle.withTransaction((context) => this.repository.load(context, id));
+    const raw = await this.oracle.withTransaction((context) =>
+      this.repository.load(context, id, current, versionId),
+    );
     if (!raw) throw new ResourceNotFoundError('JSA Draft was not found');
     this.requireScope(user, raw.header, 'VIEW');
     const matrix = await this.riskMatrices.version(raw.header.matrixVersionId);
@@ -135,14 +157,16 @@ export class JsaDraftService {
       attachments: raw.attachments,
       matrix,
       editable:
-        raw.header.lifecycleStatus === 'DRAFT' &&
+        !current &&
+        !versionId &&
+        ['DRAFT', 'PUBLISHED'].includes(raw.header.lifecycleStatus) &&
         ['DRAFT', 'RETURNED'].includes(raw.header.versionStatus) &&
-        raw.header.creatorUserId === user.userId &&
+        (raw.header.checkedOutByUserId ?? raw.header.creatorUserId) === user.userId &&
         this.capabilities.capabilities(user).edit,
     };
   }
   async printDetail(id: string, user: AuthenticatedUser): Promise<JsaDraftDetail> {
-    const detail = await this.detail(id, user);
+    const detail = await this.currentDetail(id, user);
     if (detail.lifecycleStatus !== 'PUBLISHED' || detail.versionStatus !== 'PUBLISHED')
       throw new StateConflictError('Only the current Published JSA Version can be printed');
     return { ...detail, editable: false };
@@ -166,9 +190,10 @@ export class JsaDraftService {
     this.capabilities.require(user, 'edit');
     const content = { ...input, coverage: [], procedureReferences: [] };
     this.validation.structural(content);
+    const persistedContent = omitBlankControlPlaceholders(content);
     await this.oracle.withTransaction(async (context) => {
       const access = await this.requireEditable(context, id, user);
-      await this.repository.saveContent(context, access, content, user.username);
+      await this.repository.saveContent(context, access, persistedContent, user.username);
     });
     await this.audit.recordRequired({
       actorUserId: user.userId,
@@ -191,6 +216,7 @@ export class JsaDraftService {
       attachments: input.attachments,
     };
     this.validation.structural(content);
+    const persistedContent = omitBlankControlPlaceholders(content);
     await this.oracle.withTransaction(async (context) => {
       const access = await this.requireEditable(context, id, user);
       await this.repository.updateHeader(
@@ -203,7 +229,7 @@ export class JsaDraftService {
         },
         user.username,
       );
-      await this.repository.saveContent(context, access, content, user.username);
+      await this.repository.saveContent(context, access, persistedContent, user.username);
     });
     await this.audit.recordRequired({
       actorUserId: user.userId,
@@ -265,12 +291,13 @@ export class JsaDraftService {
     const access = await this.repository.access(context, id, true);
     if (!access) throw new ResourceNotFoundError('Working JSA Draft was not found');
     this.requireScope(user, access, 'ACT');
-    if (access.status !== 'DRAFT' || !['DRAFT', 'RETURNED'].includes(access.versionStatus))
+    if (
+      !['DRAFT', 'PUBLISHED'].includes(access.status) ||
+      !['DRAFT', 'RETURNED'].includes(access.versionStatus)
+    )
       throw new StateConflictError('Only a Draft or Returned JSA may be edited');
-    if (access.creatorUserId !== user.userId)
-      throw new StateConflictError(
-        'Draft takeover is not enabled; only the creator may edit this Draft',
-      );
+    if ((access.checkedOutByUserId ?? access.creatorUserId) !== user.userId)
+      throw new StateConflictError('Only the checkout owner may edit this Working Version');
     return access;
   }
   private requireScope(
@@ -297,4 +324,17 @@ export class JsaDraftService {
       if (field.endsWith('Id') && value && !/^\d{1,19}$/.test(value))
         throw new ValidationError(`${field} must be a decimal ID string`);
   }
+}
+
+function omitBlankControlPlaceholders(content: SaveDraftContentInput): SaveDraftContentInput {
+  return {
+    ...content,
+    tasks: content.tasks.map((task) => ({
+      ...task,
+      hazards: task.hazards.map((hazard) => ({
+        ...hazard,
+        controls: hazard.controls.filter((control) => control.text.trim().length > 0),
+      })),
+    })),
+  };
 }

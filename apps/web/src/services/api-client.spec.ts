@@ -23,3 +23,17 @@ it('maps standardized API errors', async () => {
     }) as Partial<ApiClientError>,
   );
 });
+
+it('accepts a successful response with an empty body', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => '',
+    }),
+  );
+
+  await expect(new ApiClient('http://api').get('/optional-resource')).resolves.toBeUndefined();
+});

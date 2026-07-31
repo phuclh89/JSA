@@ -152,6 +152,16 @@ const attachmentSequences = [
   'SEQ_JSA_ATTACHMENT_ASSET',
   'SEQ_JSA_ATTACHMENT_VERSION',
 ];
+const phase6Tables = ['JSA_USER_FAVORITE'];
+const phase6Sequences = ['SEQ_JSA_USER_FAVORITE'];
+const phase6cTables = ['JSA_COPY_PROVENANCE'];
+const phase6cSequences = ['SEQ_JSA_COPY_PROVENANCE'];
+const phase7Tables = ['JSA_TRANSLATION', 'JSA_TRANSLATION_SEGMENT', 'JSA_TRANSLATION_ACTION'];
+const phase7Sequences = [
+  'SEQ_JSA_TRANSLATION',
+  'SEQ_JSA_TRANSL_SEGMENT',
+  'SEQ_JSA_TRANSL_ACTION',
+];
 
 async function main(): Promise<void> {
   const connection = await oracledb.getConnection(connectionConfig());
@@ -451,6 +461,12 @@ async function main(): Promise<void> {
       {},
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
+    const officialRevisionHistory = await connection.execute<HistoryRow>(
+      `SELECT MIGRATION_ID,MIGRATION_NAME,CHECKSUM_VALUE,APPLIED_AT,APPLIED_BY,EXECUTION_MS,STATUS_CODE
+       FROM JSA_SCHEMA_VERSION WHERE MIGRATION_ID='019'`,
+      {},
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
     const officialNumberTable = await connection.execute<CountRow>(
       `SELECT COUNT(*) OBJECT_COUNT
        FROM USER_TABLES WHERE TABLE_NAME='JSA_NUMBER_COUNTER'`,
@@ -474,6 +490,7 @@ async function main(): Promise<void> {
     );
     if (
       officialNumberHistory.rows?.[0]?.STATUS_CODE !== 'APPLIED' ||
+      officialRevisionHistory.rows?.[0]?.STATUS_CODE !== 'APPLIED' ||
       officialNumberTable.rows?.[0]?.OBJECT_COUNT !== 1 ||
       numberStatusColumn.rows?.[0]?.NULLABLE !== 'N' ||
       officialNumberTrigger.rows?.[0]?.OBJECT_COUNT !== 1
@@ -516,6 +533,76 @@ async function main(): Promise<void> {
       attachmentLinkColumns.rows?.[0]?.OBJECT_COUNT !== 2
     )
       throw new Error('Attachment library schema objects are incomplete');
+    const phase6History = await connection.execute<HistoryRow>(
+      `SELECT MIGRATION_ID,MIGRATION_NAME,CHECKSUM_VALUE,APPLIED_AT,APPLIED_BY,EXECUTION_MS,STATUS_CODE
+       FROM JSA_SCHEMA_VERSION WHERE MIGRATION_ID='016'`,
+      {},
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const phase6Objects = await connection.execute<CountRow>(
+      `SELECT
+        (SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME='JSA_USER_FAVORITE')
+        +(SELECT COUNT(*) FROM USER_SEQUENCES WHERE SEQUENCE_NAME='SEQ_JSA_USER_FAVORITE')
+        +(SELECT COUNT(*) FROM USER_INDEXES WHERE INDEX_NAME IN
+          ('IX_JSA_FAVORITE_USER_ACTIVE','IX_JSA_FAVORITE_MASTER_ACTIVE',
+           'IX_JSA_VERSION_BROWSE_STATE','IX_JSA_VERSION_BROWSE_ACTORS')) OBJECT_COUNT
+       FROM DUAL`,
+      {},
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    if (
+      phase6History.rows?.[0]?.STATUS_CODE !== 'APPLIED' ||
+      phase6Objects.rows?.[0]?.OBJECT_COUNT !== 6
+    )
+      throw new Error('Phase 6 Favorites and browse schema objects are incomplete');
+    const phase6cHistory = await connection.execute<HistoryRow>(
+      `SELECT MIGRATION_ID,MIGRATION_NAME,CHECKSUM_VALUE,APPLIED_AT,APPLIED_BY,EXECUTION_MS,STATUS_CODE
+       FROM JSA_SCHEMA_VERSION WHERE MIGRATION_ID='017'`,
+      {},
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const phase6cObjects = await connection.execute<CountRow>(
+      `SELECT
+        (SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME='JSA_COPY_PROVENANCE')
+        +(SELECT COUNT(*) FROM USER_SEQUENCES WHERE SEQUENCE_NAME='SEQ_JSA_COPY_PROVENANCE')
+        +(SELECT COUNT(*) FROM USER_TRIGGERS
+          WHERE TRIGGER_NAME='TRG_JSA_COPY_PROV_IMMUTABLE' AND STATUS='ENABLED')
+        +(SELECT COUNT(*) FROM USER_INDEXES
+          WHERE INDEX_NAME IN ('IX_JSA_COPY_SOURCE','IX_JSA_COPY_TIME')) OBJECT_COUNT
+       FROM DUAL`,
+      {},
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    if (
+      phase6cHistory.rows?.[0]?.STATUS_CODE !== 'APPLIED' ||
+      phase6cObjects.rows?.[0]?.OBJECT_COUNT !== 5
+    )
+      throw new Error('Phase 6C Cross-Rig Copy schema objects are incomplete');
+    const phase7History = await connection.execute<HistoryRow>(
+      `SELECT MIGRATION_ID,MIGRATION_NAME,CHECKSUM_VALUE,APPLIED_AT,APPLIED_BY,EXECUTION_MS,STATUS_CODE
+       FROM JSA_SCHEMA_VERSION WHERE MIGRATION_ID='018'`,
+      {},
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const phase7Objects = await connection.execute<CountRow>(
+      `SELECT
+        (SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME IN
+          ('JSA_TRANSLATION','JSA_TRANSLATION_SEGMENT','JSA_TRANSLATION_ACTION'))
+        +(SELECT COUNT(*) FROM USER_SEQUENCES WHERE SEQUENCE_NAME IN
+          ('SEQ_JSA_TRANSLATION','SEQ_JSA_TRANSL_SEGMENT','SEQ_JSA_TRANSL_ACTION'))
+        +(SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME IN
+          ('JSA_ASSERT_TRANSL_MUTABLE','TRG_JSA_TRANSL_SEG_MUTABLE',
+           'TRG_JSA_TRANSL_FINAL_IMMUT','TRG_JSA_TRANSL_ACTION_IMMUT')
+          AND STATUS='VALID') OBJECT_COUNT
+       FROM DUAL`,
+      {},
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    if (
+      phase7History.rows?.[0]?.STATUS_CODE !== 'APPLIED' ||
+      phase7Objects.rows?.[0]?.OBJECT_COUNT !== 10
+    )
+      throw new Error('Phase 7 Translation schema objects are incomplete');
     console.log(
       JSON.stringify({
         status: 'PASS',
@@ -567,6 +654,7 @@ async function main(): Promise<void> {
         },
         officialJsaNumber: {
           migration: officialNumberHistory.rows[0],
+          revisionMigration: officialRevisionHistory.rows[0],
           counterTable: 'JSA_NUMBER_COUNTER',
           numberStatusNullable: numberStatusColumn.rows?.[0]?.NULLABLE,
           immutableTrigger: 'TRG_JSA_OFFICIAL_NUM_IMMUTABLE',
@@ -576,6 +664,29 @@ async function main(): Promise<void> {
           tables: attachmentTables,
           sequences: attachmentSequences,
           jsaSnapshotColumns: ['LIBRARY_ASSET_VERSION_ID', 'CONTENT_SHA256'],
+        },
+        phase6: {
+          migration: phase6History.rows[0],
+          tables: phase6Tables,
+          sequences: phase6Sequences,
+          browseIndexes: ['IX_JSA_VERSION_BROWSE_STATE', 'IX_JSA_VERSION_BROWSE_ACTORS'],
+        },
+        phase6c: {
+          migration: phase6cHistory.rows[0],
+          tables: phase6cTables,
+          sequences: phase6cSequences,
+          immutableTrigger: 'TRG_JSA_COPY_PROV_IMMUTABLE',
+        },
+        phase7: {
+          migration: phase7History.rows[0],
+          tables: phase7Tables,
+          sequences: phase7Sequences,
+          guards: [
+            'JSA_ASSERT_TRANSL_MUTABLE',
+            'TRG_JSA_TRANSL_SEG_MUTABLE',
+            'TRG_JSA_TRANSL_FINAL_IMMUT',
+            'TRG_JSA_TRANSL_ACTION_IMMUT',
+          ],
         },
       }),
     );

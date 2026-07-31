@@ -27,7 +27,14 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
   ): Promise<WorkflowTarget | undefined> {
     assertOracleId(jsaId);
     const result = await context.connection.execute<Row>(
-      `SELECT TO_CHAR(M.JSA_ID) JSA_ID,TO_CHAR(V.JSA_VERSION_ID) VERSION_ID,M.JSA_NUMBER,V.JOB_TITLE,TO_CHAR(M.OWNER_SITE_ID) SITE_ID,TO_CHAR(M.RIG_ID) RIG_ID,TO_CHAR(M.DEPARTMENT_ID) DEPARTMENT_ID,TO_CHAR(V.JOB_TYPE_ID) JOB_TYPE_ID,TO_CHAR(M.CREATOR_USER_ID) CREATOR_USER_ID,M.LIFECYCLE_STATUS MASTER_STATUS,V.VERSION_STATUS,TO_CHAR(M.ROW_VERSION) MASTER_ROW_VERSION,TO_CHAR(V.ROW_VERSION) VERSION_ROW_VERSION FROM JSA_MASTER M JOIN JSA_VERSION V ON V.JSA_VERSION_ID=M.WORKING_VERSION_ID WHERE M.JSA_ID=:jsaId${lock ? ' FOR UPDATE' : ''}`,
+      `SELECT TO_CHAR(M.JSA_ID) JSA_ID,TO_CHAR(V.JSA_VERSION_ID) VERSION_ID,
+       M.JSA_NUMBER,V.JOB_TITLE,TO_CHAR(M.OWNER_SITE_ID) SITE_ID,TO_CHAR(M.RIG_ID) RIG_ID,
+       TO_CHAR(M.DEPARTMENT_ID) DEPARTMENT_ID,TO_CHAR(V.JOB_TYPE_ID) JOB_TYPE_ID,
+       TO_CHAR(NVL(M.CHECKED_OUT_BY_USER_ID,M.CREATOR_USER_ID)) CREATOR_USER_ID,
+       M.LIFECYCLE_STATUS MASTER_STATUS,V.VERSION_STATUS,TO_CHAR(M.ROW_VERSION) MASTER_ROW_VERSION,
+       TO_CHAR(V.ROW_VERSION) VERSION_ROW_VERSION
+       FROM JSA_MASTER M JOIN JSA_VERSION V ON V.JSA_VERSION_ID=M.WORKING_VERSION_ID
+       WHERE M.JSA_ID=:jsaId${lock ? ' FOR UPDATE' : ''}`,
       { jsaId },
       options,
     );
@@ -435,7 +442,70 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
       );
       return;
     }
-    const officialNumber = await this.assignOfficialNumber(c, r.target, username);
+    const publicationMaster = await c.connection.execute<Row>(
+      `SELECT TO_CHAR(M.CURRENT_VERSION_ID) CURRENT_VERSION_ID,
+       TO_CHAR(M.WORKING_VERSION_ID) WORKING_VERSION_ID,M.NUMBER_STATUS,M.JSA_NUMBER,
+       TO_CHAR(W.BASE_VERSION_ID) BASE_VERSION_ID,C.VERSION_STATUS CURRENT_STATUS
+       FROM JSA_MASTER M
+       JOIN JSA_VERSION W ON W.JSA_VERSION_ID=M.WORKING_VERSION_ID
+       LEFT JOIN JSA_VERSION C ON C.JSA_VERSION_ID=M.CURRENT_VERSION_ID
+       WHERE M.JSA_ID=:jsaId FOR UPDATE OF M.ROW_VERSION`,
+      { jsaId: r.target.jsaId },
+      options,
+    );
+    const publication = publicationMaster.rows?.[0];
+    if (!publication || publication.WORKING_VERSION_ID !== r.target.versionId)
+      throw new StateConflictError('Working Version pointer changed before publication');
+    const replacement = Boolean(publication.CURRENT_VERSION_ID);
+    if (
+      replacement &&
+      (publication.BASE_VERSION_ID !== publication.CURRENT_VERSION_ID ||
+        publication.CURRENT_STATUS !== 'PUBLISHED')
+    )
+      throw new StateConflictError(
+        'Replacement publication is blocked because Base is no longer Current',
+      );
+    const officialNumber = await this.assignOfficialNumber(
+      c,
+      r.target,
+      username,
+      replacement,
+    );
+    if (replacement) {
+      const superseded = await c.connection.execute(
+        `UPDATE JSA_VERSION SET VERSION_STATUS='SUPERSEDED',UPDATED_AT=SYSTIMESTAMP,
+         UPDATED_BY=:username,ROW_VERSION=ROW_VERSION+1
+         WHERE JSA_VERSION_ID=:currentVersionId AND VERSION_STATUS='PUBLISHED'`,
+        { username, currentVersionId: publication.CURRENT_VERSION_ID },
+      );
+      if (superseded.rowsAffected !== 1)
+        throw new StateConflictError('Current Version could not be superseded');
+      await this.outdateTranslations(
+        c,
+        publication.CURRENT_VERSION_ID,
+        r.target.versionId,
+        userId,
+        username,
+        correlationId,
+      );
+    }
+    await c.connection.execute(
+      `MERGE INTO JSA_VERSION_TASK T
+       USING (
+         SELECT VERSION_TASK_ID,
+                ROW_NUMBER() OVER (ORDER BY DISPLAY_ORDER,VERSION_TASK_ID) NEW_ORDER
+         FROM JSA_VERSION_TASK
+         WHERE JSA_VERSION_ID=:versionId AND IS_ACTIVE='Y'
+       ) S
+       ON (S.VERSION_TASK_ID=T.VERSION_TASK_ID)
+       WHEN MATCHED THEN UPDATE SET
+         T.TASK_NUMBER=TO_CHAR(S.NEW_ORDER),
+         T.DISPLAY_ORDER=S.NEW_ORDER,
+         T.UPDATED_AT=SYSTIMESTAMP,
+         T.UPDATED_BY=:username,
+         T.ROW_VERSION=T.ROW_VERSION+1`,
+      { versionId: r.target.versionId, username },
+    );
     const version = await c.connection.execute(
       `UPDATE JSA_VERSION SET VERSION_STATUS='PUBLISHED',PUBLISHED_AT=SYSTIMESTAMP,PUBLISHED_BY_USER_ID=:userId,PUBLISHED_BY_USERNAME=:username,UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:username,ROW_VERSION=ROW_VERSION+1 WHERE JSA_VERSION_ID=:versionId AND VERSION_STATUS=:status AND PUBLISHED_AT IS NULL`,
       { userId, username, versionId: r.target.versionId, status: r.versionStatus },
@@ -443,11 +513,22 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
     if (version.rowsAffected !== 1)
       throw new StateConflictError('JSA Version could not be published');
     const master = await c.connection.execute(
-      `UPDATE JSA_MASTER SET CURRENT_VERSION_ID=:versionId,WORKING_VERSION_ID=NULL,LIFECYCLE_STATUS='PUBLISHED',UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:username,ROW_VERSION=ROW_VERSION+1 WHERE JSA_ID=:jsaId AND CURRENT_VERSION_ID IS NULL AND WORKING_VERSION_ID=:versionId`,
-      { versionId: r.target.versionId, username, jsaId: r.target.jsaId },
+      `UPDATE JSA_MASTER SET CURRENT_VERSION_ID=:versionId,WORKING_VERSION_ID=NULL,
+       CHECKED_OUT_BY_USER_ID=NULL,CHECKED_OUT_BY_USERNAME=NULL,
+       CHECKED_OUT_BY_DISPLAY_NAME=NULL,CHECKED_OUT_AT=NULL,
+       LIFECYCLE_STATUS='PUBLISHED',UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:username,
+       ROW_VERSION=ROW_VERSION+1
+       WHERE JSA_ID=:jsaId AND WORKING_VERSION_ID=:versionId
+         AND NVL(CURRENT_VERSION_ID,-1)=NVL(:previousCurrentVersionId,-1)`,
+      {
+        versionId: r.target.versionId,
+        username,
+        jsaId: r.target.jsaId,
+        previousCurrentVersionId: publication.CURRENT_VERSION_ID ?? null,
+      },
     );
     if (master.rowsAffected !== 1)
-      throw new StateConflictError('Initial publication requires an empty Current Version pointer');
+      throw new StateConflictError('Current Version pointer changed during publication');
     await c.connection.execute(
       `UPDATE JSA_WORKFLOW_INSTANCE SET INSTANCE_STATUS='COMPLETED',CURRENT_STEP_ORDER=NULL,COMPLETED_AT=SYSTIMESTAMP,UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:username,ROW_VERSION=ROW_VERSION+1 WHERE INSTANCE_ID=:instanceId`,
       { username, instanceId: r.instanceId },
@@ -470,17 +551,99 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
       r.target.creatorUserId,
       'JSA_PUBLISHED',
       `JSA published: ${officialNumber}`,
-      'Initial JSA publication completed',
+      replacement ? 'Replacement JSA publication completed' : 'Initial JSA publication completed',
       'JSA_MASTER',
       r.target.jsaId,
       username,
     );
   }
 
+  private async outdateTranslations(
+    c: OracleTransactionContext,
+    sourceVersionId: string,
+    replacementVersionId: string,
+    actorUserId: string,
+    actorUsername: string,
+    correlationId: string,
+  ): Promise<void> {
+    const result = await c.connection.execute<Row>(
+      `SELECT TO_CHAR(T.TRANSLATION_ID) TRANSLATION_ID,T.TRANSLATION_STATUS,
+              T.TRANSLATION_CYCLE,TO_CHAR(T.TRANSLATOR_USER_ID) TRANSLATOR_USER_ID,
+              TO_CHAR(T.ASSIGNED_BY_USER_ID) ASSIGNED_BY_USER_ID,
+              TO_CHAR(T.STC_REVIEWER_USER_ID) STC_REVIEWER_USER_ID,
+              M.JSA_NUMBER
+       FROM JSA_TRANSLATION T
+       JOIN JSA_MASTER M ON M.JSA_ID=T.JSA_ID
+       WHERE T.SOURCE_JSA_VERSION_ID=:sourceVersionId
+        AND T.TRANSLATION_STATUS<>'OUTDATED'
+       ORDER BY T.TRANSLATION_ID
+       FOR UPDATE OF T.ROW_VERSION`,
+      { sourceVersionId },
+      options,
+    );
+    if (!result.rows?.length) return;
+    const actor = await c.connection.execute<Row>(
+      `SELECT DISPLAY_NAME FROM SYS_USER WHERE USER_ID=:actorUserId`,
+      { actorUserId },
+      options,
+    );
+    const actorDisplayName = actor.rows?.[0]?.DISPLAY_NAME ?? actorUsername;
+    for (const row of result.rows) {
+      const updated = await c.connection.execute(
+        `UPDATE JSA_TRANSLATION SET TRANSLATION_STATUS='OUTDATED',
+          CURRENT_ASSIGNEE_USER_ID=NULL,OUTDATED_AT=SYSTIMESTAMP,
+          REPLACEMENT_JSA_VERSION_ID=:replacementVersionId,
+          UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actorUsername,ROW_VERSION=ROW_VERSION+1
+         WHERE TRANSLATION_ID=:translationId
+          AND TRANSLATION_STATUS=:fromStatus`,
+        {
+          replacementVersionId,
+          actorUsername,
+          translationId: row.TRANSLATION_ID,
+          fromStatus: row.TRANSLATION_STATUS,
+        },
+      );
+      if (updated.rowsAffected !== 1)
+        throw new StateConflictError('Translation state changed during replacement publication');
+      await c.connection.execute(
+        `INSERT INTO JSA_TRANSLATION_ACTION(
+          TRANSLATION_ACTION_ID,TRANSLATION_ID,ACTION_CODE,ACTOR_USER_ID,
+          ACTOR_USERNAME,ACTOR_DISPLAY_NAME,FROM_STATUS,TO_STATUS,CYCLE_NUMBER,
+          CORRELATION_ID)
+         VALUES(SEQ_JSA_TRANSL_ACTION.NEXTVAL,:translationId,'OUTDATE',:actorUserId,
+          :actorUsername,:actorDisplayName,:fromStatus,'OUTDATED',:cycle,:correlationId)`,
+        {
+          translationId: row.TRANSLATION_ID,
+          actorUserId,
+          actorUsername,
+          actorDisplayName,
+          fromStatus: row.TRANSLATION_STATUS,
+          cycle: row.TRANSLATION_CYCLE,
+          correlationId,
+        },
+      );
+      const recipients = new Set<string>(
+        [row.TRANSLATOR_USER_ID, row.ASSIGNED_BY_USER_ID, row.STC_REVIEWER_USER_ID].filter(Boolean),
+      );
+      for (const recipient of recipients)
+        await this.notify(
+          c,
+          recipient,
+          'TRANSLATION_OUTDATED',
+          `Translation outdated: ${row.JSA_NUMBER}`,
+          'A replacement English JSA Version was published. Refresh creates a new empty Translation.',
+          'JSA_TRANSLATION',
+          row.TRANSLATION_ID,
+          actorUsername,
+        );
+    }
+  }
+
   private async assignOfficialNumber(
     c: OracleTransactionContext,
     target: WorkflowTarget,
     actor: string,
+    replacement: boolean,
   ): Promise<string> {
     const master = await c.connection.execute<Row>(
       `SELECT JSA_NUMBER,NUMBER_STATUS
@@ -492,7 +655,31 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
     );
     const current = master.rows?.[0];
     if (!current) throw new StateConflictError('JSA Master was not found during publication');
-    if (current.NUMBER_STATUS === 'OFFICIAL') return current.JSA_NUMBER;
+    if (current.NUMBER_STATUS === 'OFFICIAL') {
+      if (!replacement) return current.JSA_NUMBER;
+      const match = String(current.JSA_NUMBER).match(/^(.*?)(?:\.(\d+))?$/);
+      const baseNumber = match?.[1] ?? String(current.JSA_NUMBER);
+      const currentRevision = Number(match?.[2] ?? 0);
+      const officialNumber = `${baseNumber}.${currentRevision + 1}`;
+      if (officialNumber.length > 100)
+        throw new StateConflictError('Revised official JSA number exceeds 100 characters');
+      const revised = await c.connection.execute(
+        `UPDATE JSA_MASTER
+         SET JSA_NUMBER=:officialNumber,UPDATED_AT=SYSTIMESTAMP,UPDATED_BY=:actor,
+             ROW_VERSION=ROW_VERSION+1
+         WHERE JSA_ID=:jsaId AND NUMBER_STATUS='OFFICIAL'
+           AND JSA_NUMBER=:currentNumber`,
+        {
+          officialNumber,
+          actor,
+          jsaId: target.jsaId,
+          currentNumber: current.JSA_NUMBER,
+        },
+      );
+      if (revised.rowsAffected !== 1)
+        throw new StateConflictError('Revised official JSA number could not be assigned');
+      return officialNumber;
+    }
     if (current.NUMBER_STATUS !== 'TEMPORARY')
       throw new StateConflictError('JSA number status is invalid for publication');
 
@@ -584,10 +771,57 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
     rigId?: string,
   ): Promise<any[]> {
     if (rigId) assertOracleId(rigId, 'rigId');
+    if (kind === 'published') {
+      const published = await c.connection.execute<Row>(
+        `SELECT TO_CHAR(I.INSTANCE_ID) INSTANCE_ID,TO_CHAR(M.JSA_ID) JSA_ID,
+         M.JSA_NUMBER,V.JOB_TITLE,V.VERSION_STATUS,SI.SITE_CODE,SI.SITE_NAME,
+         R.RIG_CODE,R.RIG_NAME,D.DEPARTMENT_CODE,D.DEPARTMENT_NAME,
+         V.PUBLISHED_AT,V.PUBLISHED_BY_USERNAME,V.UPDATED_AT
+         FROM JSA_MASTER M
+         JOIN JSA_VERSION V ON V.JSA_VERSION_ID=M.CURRENT_VERSION_ID
+         LEFT JOIN JSA_WORKFLOW_INSTANCE I ON I.JSA_VERSION_ID=V.JSA_VERSION_ID
+         JOIN SYS_SITE SI ON SI.SITE_ID=M.OWNER_SITE_ID
+         JOIN SYS_RIG R ON R.RIG_ID=M.RIG_ID AND R.SITE_ID=M.OWNER_SITE_ID
+         JOIN SYS_DEPARTMENT D ON D.DEPARTMENT_ID=M.DEPARTMENT_ID
+          AND D.RIG_ID=M.RIG_ID AND D.SITE_ID=M.OWNER_SITE_ID
+         WHERE M.LIFECYCLE_STATUS='PUBLISHED' AND V.VERSION_STATUS='PUBLISHED'
+          AND (:rigId IS NULL OR M.RIG_ID=:rigId)
+          AND EXISTS(
+           SELECT 1 FROM SYS_USER_DATA_SCOPE DS
+           WHERE DS.USER_ID=:userId AND DS.IS_ACTIVE='Y' AND DS.CAN_VIEW='Y'
+            AND DS.EFFECTIVE_FROM<=SYSTIMESTAMP
+            AND (DS.EFFECTIVE_TO IS NULL OR DS.EFFECTIVE_TO>=SYSTIMESTAMP)
+            AND DS.SITE_ID=M.OWNER_SITE_ID
+            AND (DS.SCOPE_TYPE='SITE'
+             OR (DS.SCOPE_TYPE='RIG' AND DS.RIG_ID=M.RIG_ID)
+             OR (DS.SCOPE_TYPE='DEPARTMENT' AND DS.DEPARTMENT_ID=M.DEPARTMENT_ID
+              AND (DS.RIG_ID IS NULL OR DS.RIG_ID=M.RIG_ID)))
+          )
+         ORDER BY V.UPDATED_AT DESC`,
+        { userId, rigId: rigId ?? null },
+        options,
+      );
+      return (published.rows ?? []).map((r) => ({
+        instanceId: r.INSTANCE_ID ?? `published-${r.JSA_ID}`,
+        jsaId: r.JSA_ID,
+        jsaNumber: r.JSA_NUMBER,
+        ...(r.JOB_TITLE ? { jobTitle: r.JOB_TITLE } : {}),
+        ownerSiteCode: r.SITE_CODE,
+        ownerSiteName: r.SITE_NAME,
+        rigCode: r.RIG_CODE,
+        rigName: r.RIG_NAME,
+        departmentCode: r.DEPARTMENT_CODE,
+        departmentName: r.DEPARTMENT_NAME,
+        versionStatus: r.VERSION_STATUS,
+        ...(r.PUBLISHED_AT ? { publishedAt: r.PUBLISHED_AT } : {}),
+        ...(r.PUBLISHED_BY_USERNAME ? { publishedByUsername: r.PUBLISHED_BY_USERNAME } : {}),
+        updatedAt: r.UPDATED_AT,
+      }));
+    }
     const clauses = {
       approvals: `T.ASSIGNEE_USER_ID=:userId AND T.TASK_STATUS='PENDING'`,
-      pending: `M.CREATOR_USER_ID=:userId AND I.INSTANCE_STATUS IN ('ACTIVE','RETURNED')`,
-      rejected: `M.CREATOR_USER_ID=:userId AND I.INSTANCE_STATUS='REJECTED'`,
+      pending: `NVL(M.CHECKED_OUT_BY_USER_ID,M.CREATOR_USER_ID)=:userId AND I.INSTANCE_STATUS IN ('ACTIVE','RETURNED')`,
+      rejected: `NVL(M.CHECKED_OUT_BY_USER_ID,M.CREATOR_USER_ID)=:userId AND I.INSTANCE_STATUS='REJECTED'`,
       published: `M.LIFECYCLE_STATUS='PUBLISHED'`,
     };
     const result = await c.connection.execute<Row>(
@@ -667,7 +901,8 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
     if (rigId) assertOracleId(rigId, 'rigId');
     const result = await c.connection.execute<Row>(
       `WITH ACCESSIBLE_JSA AS (
-         SELECT M.JSA_ID,M.CREATOR_USER_ID,M.LIFECYCLE_STATUS,
+         SELECT M.JSA_ID,NVL(M.CHECKED_OUT_BY_USER_ID,M.CREATOR_USER_ID) CREATOR_USER_ID,
+                M.LIFECYCLE_STATUS,
                 V.JSA_VERSION_ID,V.VERSION_STATUS
            FROM JSA_MASTER M
            JOIN JSA_VERSION V
@@ -735,7 +970,23 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
   async detail(c: OracleTransactionContext, jsaId: string): Promise<any | undefined> {
     assertOracleId(jsaId);
     const result = await c.connection.execute<Row>(
-      `SELECT TO_CHAR(I.INSTANCE_ID) INSTANCE_ID,TO_CHAR(I.JSA_ID) JSA_ID,TO_CHAR(I.JSA_VERSION_ID) VERSION_ID,M.JSA_NUMBER,V.JOB_TITLE,TO_CHAR(M.OWNER_SITE_ID) OWNER_SITE_ID,TO_CHAR(M.RIG_ID) RIG_ID,TO_CHAR(M.DEPARTMENT_ID) DEPARTMENT_ID,TO_CHAR(M.CREATOR_USER_ID) CREATOR_USER_ID,I.INSTANCE_STATUS,V.VERSION_STATUS,I.CURRENT_STEP_ORDER,I.CYCLE_NUMBER,TO_CHAR(T.WORKFLOW_TASK_ID) CURRENT_TASK_ID,TO_CHAR(T.ASSIGNEE_USER_ID) CURRENT_ASSIGNEE_USER_ID,S.STEP_NAME CURRENT_STEP_NAME FROM JSA_WORKFLOW_INSTANCE I JOIN JSA_MASTER M ON M.JSA_ID=I.JSA_ID JOIN JSA_VERSION V ON V.JSA_VERSION_ID=I.JSA_VERSION_ID LEFT JOIN JSA_WORKFLOW_TASK T ON T.INSTANCE_ID=I.INSTANCE_ID AND T.CYCLE_NUMBER=I.CYCLE_NUMBER AND T.TASK_STATUS='PENDING' LEFT JOIN JSA_WORKFLOW_STEP S ON S.STEP_ID=T.STEP_ID WHERE I.JSA_ID=:jsaId`,
+      `SELECT TO_CHAR(I.INSTANCE_ID) INSTANCE_ID,TO_CHAR(I.JSA_ID) JSA_ID,
+       TO_CHAR(I.JSA_VERSION_ID) VERSION_ID,TO_CHAR(V.BASE_VERSION_ID) BASE_VERSION_ID,
+       M.JSA_NUMBER,V.JOB_TITLE,TO_CHAR(M.OWNER_SITE_ID) OWNER_SITE_ID,
+       TO_CHAR(M.RIG_ID) RIG_ID,TO_CHAR(M.DEPARTMENT_ID) DEPARTMENT_ID,
+       TO_CHAR(NVL(M.CHECKED_OUT_BY_USER_ID,M.CREATOR_USER_ID)) CREATOR_USER_ID,
+       I.INSTANCE_STATUS,V.VERSION_STATUS,I.CURRENT_STEP_ORDER,I.CYCLE_NUMBER,
+       TO_CHAR(T.WORKFLOW_TASK_ID) CURRENT_TASK_ID,
+       TO_CHAR(T.ASSIGNEE_USER_ID) CURRENT_ASSIGNEE_USER_ID,S.STEP_NAME CURRENT_STEP_NAME
+       FROM JSA_WORKFLOW_INSTANCE I JOIN JSA_MASTER M ON M.JSA_ID=I.JSA_ID
+       JOIN JSA_VERSION V ON V.JSA_VERSION_ID=I.JSA_VERSION_ID
+       LEFT JOIN JSA_WORKFLOW_TASK T ON T.INSTANCE_ID=I.INSTANCE_ID
+        AND T.CYCLE_NUMBER=I.CYCLE_NUMBER AND T.TASK_STATUS='PENDING'
+       LEFT JOIN JSA_WORKFLOW_STEP S ON S.STEP_ID=T.STEP_ID
+       WHERE I.JSA_ID=:jsaId
+       ORDER BY CASE WHEN I.JSA_VERSION_ID=M.WORKING_VERSION_ID THEN 0 ELSE 1 END,
+                I.INSTANCE_ID DESC
+       FETCH FIRST 1 ROW ONLY`,
       { jsaId },
       options,
     );
@@ -750,6 +1001,7 @@ export class OracleJsaWorkflowRepository implements JsaWorkflowRepository {
       instanceId: r.INSTANCE_ID,
       jsaId: r.JSA_ID,
       versionId: r.VERSION_ID,
+      ...(r.BASE_VERSION_ID ? { baseVersionId: r.BASE_VERSION_ID } : {}),
       jsaNumber: r.JSA_NUMBER,
       ...(r.JOB_TITLE ? { jobTitle: r.JOB_TITLE } : {}),
       ownerSiteId: r.OWNER_SITE_ID,

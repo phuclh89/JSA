@@ -54,11 +54,11 @@ describe('OracleJsaDraftRepository', () => {
 
   it('lists only creator-owned Draft or Returned Working Versions in governed scope', async () => {
     const execute = jest.fn(async (sql: string, binds: Record<string, unknown>) => {
-      expect(sql).toContain('M.CREATOR_USER_ID=:userId');
+      expect(sql).toContain('NVL(M.CHECKED_OUT_BY_USER_ID,M.CREATOR_USER_ID)=:userId');
       expect(sql).toContain("V.VERSION_STATUS IN ('DRAFT','RETURNED')");
       expect(sql).toContain('V.JSA_VERSION_ID=M.WORKING_VERSION_ID');
       expect(sql).toContain('FROM SYS_USER_DATA_SCOPE DS');
-      expect(binds).toEqual({ userId: '7' });
+      expect(binds).toEqual({ userId: '7', rigId: null });
       return {
         rows: [
           {

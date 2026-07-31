@@ -21,6 +21,7 @@ import type {
   WorkflowTarget,
 } from '../domain/jsa-workflow.types';
 import { JsaWorkflowCapabilityService } from './jsa-workflow-capability.service';
+import { JsaVersioningService } from '../../jsa-versioning/application/jsa-versioning.service';
 @Injectable()
 export class JsaWorkflowService {
   constructor(
@@ -30,6 +31,7 @@ export class JsaWorkflowService {
     private readonly scopes: DataScopeService,
     private readonly config: ConfigService,
     private readonly audit: SecurityAuditService,
+    private readonly versioning: JsaVersioningService,
   ) {}
   capabilityState(user: AuthenticatedUser) {
     return this.capabilities.state(user);
@@ -241,6 +243,19 @@ export class JsaWorkflowService {
       'VIEW',
     );
     return value;
+  }
+  async reviewCompare(jsaId: string, user: AuthenticatedUser) {
+    this.capabilities.require(user, 'view');
+    const runtime = await this.oracle.withTransaction((c) =>
+      this.repository.runtime(c, jsaId),
+    );
+    if (!runtime) throw new ResourceNotFoundError('Workflow instance was not found');
+    this.scope(user, runtime.target, 'VIEW');
+    if (runtime.assigneeUserId !== user.userId)
+      throw new StateConflictError(
+        'Only the current workflow assignee may review revision differences',
+      );
+    return this.versioning.compare(jsaId, user, true);
   }
   async definitions(user: AuthenticatedUser) {
     this.capabilities.require(user, 'admin');

@@ -72,6 +72,16 @@ const environmentSchema = z
     JSA_PERMISSION_CREATE: optionalNonEmpty,
     JSA_PERMISSION_EDIT: optionalNonEmpty,
     JSA_PERMISSION_CANCEL: optionalNonEmpty,
+    JSA_PERMISSION_UPDATE: optionalNonEmpty,
+    JSA_PERMISSION_COMPARE: optionalNonEmpty,
+    JSA_PERMISSION_UNDO_CHECKOUT: optionalNonEmpty,
+    JSA_PERMISSION_FAVORITE: optionalNonEmpty,
+    JSA_PERMISSION_COPY: optionalNonEmpty,
+    JSA_PERMISSION_TRANSLATION_VIEW: optionalNonEmpty,
+    JSA_PERMISSION_TRANSLATION_ASSIGN: optionalNonEmpty,
+    JSA_PERMISSION_TRANSLATE: optionalNonEmpty,
+    JSA_PERMISSION_TRANSLATION_APPROVE: optionalNonEmpty,
+    JSA_PERMISSION_TRANSLATION_PRINT: optionalNonEmpty,
     JSA_PERMISSION_SUBMIT: optionalNonEmpty,
     JSA_PERMISSION_APPROVE: optionalNonEmpty,
     JSA_PERMISSION_RETURN: optionalNonEmpty,
@@ -179,6 +189,54 @@ const environmentSchema = z
         code: 'custom',
         path: ['JSA_PERMISSION_VIEW'],
         message: 'all four JSA permission mappings must be configured together',
+      });
+    const revisionPermissionValues = [
+      value.JSA_PERMISSION_UPDATE,
+      value.JSA_PERMISSION_COMPARE,
+      value.JSA_PERMISSION_UNDO_CHECKOUT,
+    ];
+    if (revisionPermissionValues.some(Boolean) && !revisionPermissionValues.every(Boolean))
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_PERMISSION_UPDATE'],
+        message: 'all three JSA revision permission mappings must be configured together',
+      });
+    if (value.NODE_ENV === 'production' && !revisionPermissionValues.every(Boolean))
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_PERMISSION_UPDATE'],
+        message: 'JSA revision permission mappings are required in production',
+      });
+    if (value.NODE_ENV === 'production' && !value.JSA_PERMISSION_FAVORITE)
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_PERMISSION_FAVORITE'],
+        message: 'JSA favorite permission mapping is required in production',
+      });
+    if (value.NODE_ENV === 'production' && !value.JSA_PERMISSION_COPY)
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_PERMISSION_COPY'],
+        message: 'JSA Copy permission mapping is required in production',
+      });
+    const translationPermissionValues = [
+      value.JSA_PERMISSION_TRANSLATION_VIEW,
+      value.JSA_PERMISSION_TRANSLATION_ASSIGN,
+      value.JSA_PERMISSION_TRANSLATE,
+      value.JSA_PERMISSION_TRANSLATION_APPROVE,
+      value.JSA_PERMISSION_TRANSLATION_PRINT,
+    ];
+    if (translationPermissionValues.some(Boolean) && !translationPermissionValues.every(Boolean))
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_PERMISSION_TRANSLATION_VIEW'],
+        message: 'all five Translation permission mappings must be configured together',
+      });
+    if (value.NODE_ENV === 'production' && !translationPermissionValues.every(Boolean))
+      context.addIssue({
+        code: 'custom',
+        path: ['JSA_PERMISSION_TRANSLATION_VIEW'],
+        message: 'Translation permission mappings are required in production',
       });
     const workflowPermissionValues = [
       value.JSA_PERMISSION_SUBMIT,

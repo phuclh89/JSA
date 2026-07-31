@@ -32,6 +32,7 @@ async function main(): Promise<void> {
     const live = await request(`${baseUrl}/health/live`, 'phase0a-live');
     const ready = await request(`${baseUrl}/health/ready`, 'phase0a-ready');
     const configuredSmokeUser = process.env.PHASE1_SMOKE_USER?.trim();
+    const authMode = process.env.AUTH_MODE?.trim() || 'development';
     const authMe = await request(`${baseUrl}/auth/me`, 'phase1-auth-me', {
       'X-Dev-User': configuredSmokeUser || '__phase1_unregistered_probe__',
     });
@@ -40,8 +41,13 @@ async function main(): Promise<void> {
       const userId = authMe.body.userId;
       if (authMe.status !== 200 || typeof userId !== 'string' || !/^\d+$/.test(userId))
         throw new Error('Authenticated Phase 1 user-context smoke failed');
-    } else if (authMe.status !== 403 || authCode !== 'APPLICATION_USER_NOT_REGISTERED') {
-      throw new Error('Unregistered Phase 1 identity was not denied safely');
+    } else {
+      const deniedSafely =
+        authMode === 'ldap'
+          ? authMe.status === 401 && authCode === 'UNAUTHENTICATED'
+          : authMe.status === 403 && authCode === 'APPLICATION_USER_NOT_REGISTERED';
+      if (!deniedSafely)
+        throw new Error('Unauthenticated or unregistered Phase 1 identity was not denied safely');
     }
     const repeated: number[] = [];
     for (let index = 0; index < 30; index += 1) {

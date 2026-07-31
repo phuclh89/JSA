@@ -74,5 +74,10 @@ export interface JsaDraftRepository {
     versionRowVersion: string,
     actor: string,
   ): Promise<void>;
-  load(context: OracleTransactionContext, jsaId: string): Promise<DraftLoadRecord | undefined>;
+  load(
+    context: OracleTransactionContext,
+    jsaId: string,
+    current?: boolean,
+    versionId?: string,
+  ): Promise<DraftLoadRecord | undefined>;
 }

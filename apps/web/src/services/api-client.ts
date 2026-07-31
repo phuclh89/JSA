@@ -32,6 +32,18 @@ export class ApiClient {
     return this.request<T>(path, { method: 'POST', body: JSON.stringify(body) });
   }
 
+  async postWithHeaders<T, B = unknown>(
+    path: string,
+    body: B,
+    headers: Record<string, string>,
+  ): Promise<T> {
+    return this.request<T>(path, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers,
+    });
+  }
+
   async postEmpty<T>(path: string): Promise<T> {
     return this.request<T>(path, { method: 'POST' });
   }
@@ -46,6 +58,9 @@ export class ApiClient {
   async patch<T, B = unknown>(path: string, body: B): Promise<T> {
     return this.request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
   }
+  async delete<T>(path: string): Promise<T> {
+    return this.request<T>(path, { method: 'DELETE' });
+  }
 
   private async request<T>(
     path: string,
@@ -58,6 +73,7 @@ export class ApiClient {
       ...init,
       credentials: 'include',
       headers: {
+        ...init.headers,
         Accept: 'application/json',
         ...(init.body && !(init.body instanceof FormData)
           ? { 'Content-Type': 'application/json' }
@@ -81,7 +97,9 @@ export class ApiClient {
       );
     }
     if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
+    const responseText = await response.text();
+    if (!responseText.trim()) return undefined as T;
+    return JSON.parse(responseText) as T;
   }
 }
 

@@ -16,6 +16,10 @@ const permissionDefinitions = [
   ['DEV_JSA_COMMENT', 'Comment on JSA workflow'],
   ['DEV_JSA_WORKFLOW_VIEW', 'View JSA workflow'],
   ['DEV_JSA_WORKFLOW_ADMIN', 'Administer JSA workflow'],
+  ['DEV_JSA_FAVORITE', 'Favorite or unfavorite a JSA'],
+  ['DEV_JSA_UPDATE', 'Check out a Published JSA for update'],
+  ['DEV_JSA_COMPARE', 'Compare JSA versions and view version history'],
+  ['DEV_JSA_UNDO_CHECKOUT', 'Undo a JSA checkout'],
 ] as const;
 const workflowSteps = [
   {

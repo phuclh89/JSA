@@ -1,0 +1,51 @@
+.jsa-copy-modal .ant-modal-body {
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}
+
+.jsa-copy-modal .ant-steps {
+  margin-bottom: 24px;
+}
+
+.jsa-copy-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.jsa-copy-preflight,
+.jsa-copy-confirmation,
+.copy-provenance-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.jsa-copy-mapping-group {
+  display: grid;
+  gap: 8px;
+}
+
+.jsa-copy-confirmation > .ant-checkbox-wrapper {
+  align-items: flex-start;
+  min-height: 44px;
+}
+
+@media (max-width: 991px) {
+  .jsa-copy-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .jsa-copy-modal {
+    top: 8px;
+    max-width: calc(100vw - 16px);
+    margin: 0 8px;
+  }
+
+  .jsa-copy-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

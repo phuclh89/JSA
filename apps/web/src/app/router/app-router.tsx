@@ -11,10 +11,10 @@ import { RigMatrixAssignmentsPage } from '../../features/administration/rig-matr
 import { OrganizationPage } from '../../features/administration/organization-page';
 import { JsaDraftEditor } from '../../features/jsa/jsa-draft-editor';
 import { JsaPrintPage } from '../../features/jsa/jsa-print-page';
-import { MyDraftsPage } from '../../features/jsa/my-drafts-page';
 import { JsaCapabilityRoute } from '../../features/jsa/jsa-capability-route';
 import { WorkflowCapabilityRoute } from '../../features/jsa/workflow-capability-route';
-import { WorkflowQueuePage } from '../../features/jsa/workflow-queue-page';
+import { JsaBrowsePage } from '../../features/jsa/jsa-browse-page';
+import { JsaBrowseCapabilityRoute } from '../../features/jsa/jsa-browse-capability-route';
 import { WorkflowReviewPage } from '../../features/jsa/workflow-review-page';
 import { WorkflowConfigPage } from '../../features/administration/workflow-config-page';
 import { AccessUsersPage } from '../../features/administration/access-users-page';
@@ -24,6 +24,10 @@ import { AccessDiagnosticsPage } from '../../features/administration/access-diag
 import { AccessAuditPage } from '../../features/administration/access-audit-page';
 import { AttachmentLibraryPage } from '../../features/administration/attachment-library-page';
 import { LoginPage } from '../../features/auth/login-page';
+import { TranslationCapabilityRoute } from '../../features/jsa/translation-capability-route';
+import { TranslationWorkspacePage } from '../../features/jsa/translation-workspace-page';
+import { TranslationEditorPage } from '../../features/jsa/translation-editor-page';
+import { TranslationPrintPage } from '../../features/jsa/translation-print-page';
 export function AppRouter() {
   return (
     <Routes>
@@ -36,6 +40,16 @@ export function AppRouter() {
             <JsaCapabilityRoute capability="view">
               <JsaPrintPage />
             </JsaCapabilityRoute>
+          </AuthenticatedRoute>
+        }
+      />
+      <Route
+        path="/jsa/translations/:id/print"
+        element={
+          <AuthenticatedRoute>
+            <TranslationCapabilityRoute capability="print">
+              <TranslationPrintPage />
+            </TranslationCapabilityRoute>
           </AuthenticatedRoute>
         }
       />
@@ -70,10 +84,26 @@ export function AppRouter() {
         />
         <Route path="/jsa/new" element={<Navigate to="/jsa/published" replace />} />
         <Route
+          path="/jsa/translations"
+          element={
+            <TranslationCapabilityRoute capability="view">
+              <TranslationWorkspacePage />
+            </TranslationCapabilityRoute>
+          }
+        />
+        <Route
+          path="/jsa/translations/:id"
+          element={
+            <TranslationCapabilityRoute capability="view">
+              <TranslationEditorPage />
+            </TranslationCapabilityRoute>
+          }
+        />
+        <Route
           path="/jsa/drafts"
           element={
             <JsaCapabilityRoute capability="view">
-              <MyDraftsPage />
+              <JsaBrowsePage kind="drafts" />
             </JsaCapabilityRoute>
           }
         />
@@ -85,17 +115,27 @@ export function AppRouter() {
             </JsaCapabilityRoute>
           }
         />
-        {(['approvals', 'pending', 'rejected', 'published'] as const).map((kind) => (
+        {(['published', 'all', 'approvals', 'pending', 'rejected'] as const).map((kind) => (
           <Route
             key={kind}
             path={`/jsa/${kind}`}
             element={
               <WorkflowCapabilityRoute capability="view">
-                <WorkflowQueuePage kind={kind} />
+                <JsaBrowsePage kind={kind} />
               </WorkflowCapabilityRoute>
             }
           />
         ))}
+        <Route
+          path="/jsa/favorites"
+          element={
+            <WorkflowCapabilityRoute capability="view">
+              <JsaBrowseCapabilityRoute capability="favorite">
+                <JsaBrowsePage kind="favorites" />
+              </JsaBrowseCapabilityRoute>
+            </WorkflowCapabilityRoute>
+          }
+        />
         <Route
           path="/jsa/:id/workflow"
           element={

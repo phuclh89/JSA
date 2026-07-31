@@ -3,12 +3,7 @@ import { ArrowLeftOutlined, PrinterOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type {
-  JsaDraftDetail,
-  JsaDraftHazard,
-  JsaRiskSelection,
-  MasterDataRecord,
-} from '@jsams/shared-types';
+import type { JsaDraftDetail, JsaRiskSelection, MasterDataRecord } from '@jsams/shared-types';
 import pvDrillingLogo from '../../assets/pv-drilling-logo.png';
 import type { ApiClientError } from '../../services/api-client';
 import { jsaApi } from './jsa-api';
@@ -121,6 +116,44 @@ export function JsaPrintPage() {
         </footer>
       </article>
     </main>
+  );
+}
+
+export function JsaPrintDocument({
+  draft,
+  printedAt,
+  prompts,
+  promptLoading = false,
+  promptError = false,
+  languageLabel,
+}: {
+  draft: JsaDraftDetail;
+  printedAt: Date;
+  prompts: Array<{ id: string; label: string; selected: boolean }>;
+  promptLoading?: boolean;
+  promptError?: boolean;
+  languageLabel?: string;
+}) {
+  return (
+    <article className="jsa-print-document" aria-label={`Printable JSA ${draft.jsaNumber}`}>
+      <PrintHeader draft={draft} printedAt={printedAt} />
+      <PrintPrompts prompts={prompts} loading={promptLoading} error={promptError} />
+      <PrintMatrix draft={draft} />
+      <PrintTaskAssessment draft={draft} />
+      <PrintBasicSteps draft={draft} />
+      <BlankPersonalInvolved />
+      <BlankDebrief />
+      <footer className="print-document-trace">
+        <span>JSA Master ID: {draft.jsaId}</span>
+        <span>Exact Version ID: {draft.versionId}</span>
+        <span>Status: {draft.versionStatus}</span>
+        <span>
+          Language:{' '}
+          {languageLabel ?? `${draft.languageCode ?? 'EN'} — ${draft.languageName ?? 'English'}`}
+        </span>
+        <span>Printed: {formatDateTime(printedAt)}</span>
+      </footer>
+    </article>
   );
 }
 
@@ -573,7 +606,7 @@ function BlankChecklist({ items, lines }: { items: string[]; lines: number }) {
   );
 }
 
-function mergePrintPrompts(draft: JsaDraftDetail, options: MasterDataRecord[]) {
+export function mergePrintPrompts(draft: JsaDraftDetail, options: MasterDataRecord[]) {
   const currentIds = new Set(options.map((option) => option.id));
   return [
     ...options.map((option) => ({

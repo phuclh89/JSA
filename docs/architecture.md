@@ -13,7 +13,7 @@ NestJS modular monolith
       Oracle 19c+
 ```
 
-Implemented modules are `health`, `system`, `security`, `master-data`, `risk-matrix`, `jsa-draft`, `jsa-workflow`, `access-administration`, and `attachment-library`; common infrastructure contains authentication/authorization guards, errors, correlation/logging, and Oracle access. Each business slice follows Controller -> Application Service -> Domain/Repository Port -> Oracle Adapter. Future business modules belong under `modules/` but must preserve dependency direction and may not depend on controllers. No empty future modules are created.
+Implemented modules are `health`, `system`, `security`, `master-data`, `risk-matrix`, `jsa-draft`, `jsa-workflow`, `jsa-versioning`, `access-administration`, and `attachment-library`; common infrastructure contains authentication/authorization guards, errors, correlation/logging, and Oracle access. Each business slice follows Controller -> Application Service -> Domain/Repository Port -> Oracle Adapter. Future business modules belong under `modules/` but must preserve dependency direction and may not depend on controllers. No empty future modules are created.
 
 The global Oracle module initializes the selected client mode exactly once, then creates one pool at Nest module initialization and drains it on SIGINT/SIGTERM graceful shutdown. The current Windows development policy is mandatory Thick mode with the configured Instant Client; initialization or mandatory pool failure stops startup with a sanitized diagnostic. Every borrowed connection closes in `finally`. Application services define transaction scope; `withTransaction` commits success and rolls back failure. Dates/timestamps remain ISO-8601 strings at API boundaries, CLOBs are explicitly converted or streamed in repositories, rows use object output, and `NUMBER(19)` IDs are fetched/serialized as strings.
 
@@ -62,7 +62,7 @@ SQL migrations are explicit, checksummed, ordered, and paired with rollback. Mig
 
 Every Phase 1 table has its own Oracle sequence. Final numeric ranges remain deployment input, so migration 002 does not seed site/range/user data. The controlled bootstrap configures the allowlisted sequences from an approved range. With `LOCAL_SITE_ID` set, startup fails if a sequence has no valid local range, its next value is outside the range, or active ranges for the same sequence code overlap across sites.
 
-Not implemented: translations, annual reviews, reporting, automatic identity provisioning/synchronization, distributed session revocation, GoldenGate deployment topology, external notification delivery, persistent general business-audit storage outside the Phase 4.5 access-audit boundary, and production infrastructure. Production master data, workflow routing, approver assignments, Rig Matrix definitions, mapped attachment roots, and the third-party binary synchronization product remain deployment/configuration inputs rather than invented seed data.
+Not implemented: annual reviews, reporting, automatic identity provisioning/synchronization, distributed session revocation, GoldenGate deployment topology, external notification delivery, persistent general business-audit storage outside the Phase 4.5 access-audit boundary, and production infrastructure. Production master data, workflow routing, approver assignments, Rig Matrix definitions, mapped attachment roots, and the third-party binary synchronization product remain deployment/configuration inputs rather than invented seed data.
 
 ## Phase 3 JSA Draft module
 
@@ -107,3 +107,31 @@ Notifications are persisted in-app records with outbox intent. Phase 4 has no di
 `GET /api/v1/jsa-drafts/:id/print` is the operational print-read boundary. It reuses the governed JSA view capability and exact Site/Rig/Department view scope, resolves the Master's current immutable Version, and fails closed unless both Master lifecycle and Version status are `PUBLISHED`. A dedicated print-permission code remains an open business decision and is not invented by this implementation.
 
 The React route `/jsa/:id/print` is authenticated but intentionally outside the application shell. It renders the confirmed PV Drilling JSA form as semantic HTML, loads governed content through Basic Job Step from the exact Published Version, retains selected Prompt snapshots that no longer exist in the current catalogue, and renders the `PERSONAL INVOLVED` and Work Leader Debrief sections as static blank form layout. `window.print()` hands PDF generation to the browser; the API does not generate, store, or synchronize a PDF binary. Print CSS supplies A4 landscape defaults, exact risk/background colors, repeated Task-table headers, controlled page breaks, and print-only removal of navigation/actions.
+
+## Phase 5 revision and replacement boundary
+
+`jsa-versioning` owns checkout, Undo Checkout, normalized version history, and on-demand Base/Working comparison. Checkout locks `JSA_MASTER`, verifies the current version is Published, resolves exactly one effective Rig Matrix, clones the complete aggregate with new sequence-generated physical IDs and stable logical keys, and only then advances the Working pointer. Current operational reads and printing continue to resolve `CURRENT_VERSION_ID`.
+
+The workflow module remains the only publication boundary. Final revision approval locks the Master, requires `Working.BASE_VERSION_ID = Master.CURRENT_VERSION_ID`, marks the old Published Version `SUPERSEDED`, publishes the Working Version with the existing official number, advances the Current pointer, and clears checkout metadata in the same transaction. Compare is not persisted: deterministic normalized snapshots are matched by entity type and logical key on demand.
+
+## Phase 6 Browse/Search and Favorites boundary
+
+`jsa-browse` is the shared read boundary for Published, Favorites, All JSAs, My Drafts, Needs Approval, Pending, and Rejected. The controller accepts one explicit filter/search contract; the application service validates enums, bounds, identifiers, dates, and fail-closed permission mappings; the Oracle repository owns bound predicates, actor/data-scope filtering, stable paging, and allowlisted ordering.
+
+All JSAs returns one row per visible Master. Current Published visibility is independent from Working visibility; Working content contributes only when the actor is its creator/checkout owner or current workflow assignee. Search returns matched fields and Current/Working kinds, not snippets.
+
+Favorites are Master-level user preferences stored separately from immutable JSA content. A state change requires JSA view permission, the independently configured Favorite permission, data scope, and a valid Current Published Version. Structured `SecurityAuditService` events are emitted only for actual Favorite/Unfavorite transitions.
+
+## Phase 6C Cross-Rig Copy boundary
+
+`jsa-copy` is a separate modular slice with controller, application service, repository port, and Oracle adapter. It reads the source Current Published aggregate in source VIEW scope, resolves destination eligibility in local-Site ACT scope, produces an authoritative preflight, and creates the destination Master, Version, approved child subset, and immutable provenance in one Oracle transaction.
+
+Stable-code reference mapping is batched before creation. Prompt gaps are warnings; missing or ambiguous Position/Tool mappings are blockers. The service validates hierarchy, lifecycle, language, Matrix completeness, graph/cardinality invariants, and repeats those checks under the copy transaction. Exact Matrix-Version equality preserves risk; inequality clears every risk foreign key and result snapshot. Idempotency is actor plus request key with a canonical request hash and returns the exact originally created Version.
+
+The frontend exposes Copy only as a ribbon action on Published/Favorites/All lists. The modal owns destination selection, preflight, warning acknowledgement, explicit confirmation, and post-create worksheet opening. Provenance is rendered from the destination editor and remains tied to the initial copied Version after later publishing or revision.
+
+## Phase 7 Translation Management boundary
+
+`jsa-translation` owns the separate Translation aggregate, deterministic structured segment inventory, assignment, Translator save/submit, STC return/comment/publication, Outdated history, Refresh, queues, detail/history, and HTML printing. It references one exact immutable English source Version and never creates a JSA Version or changes JSA pointers.
+
+Permission, workflow role, data scope, current assignment, lifecycle state, and local-Site ownership are independently enforced. `SYSTEM_ADMIN` has no Translation bypass. Replacement publication keeps the lock order Master → Translation → action/notification evidence and atomically marks every Translation of the replaced source `OUTDATED` before advancing the Current pointer.

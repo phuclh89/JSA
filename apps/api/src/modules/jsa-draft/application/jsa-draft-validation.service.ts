@@ -35,8 +35,10 @@ export class JsaDraftValidationService {
     input.prompts.forEach((x) => add('prompt', x.ref));
     input.tasks.forEach((t) => {
       add('task', t.ref);
+      if (!t.title.trim()) throw new ValidationError('Task title is required before saving');
       t.hazards.forEach((h) => {
         add('hazard', h.ref);
+        if (!h.text.trim()) throw new ValidationError('Hazard text is required before saving');
         if (h.controls.length !== 1)
           throw new ValidationError('Every Hazard requires exactly one Control');
         if (h.residualRisk.severityId !== h.initialRisk.severityId)
@@ -47,6 +49,8 @@ export class JsaDraftValidationService {
     input.coverage.forEach((x) => add('coverage', x.ref));
     input.basicSteps.forEach((s) => {
       add('basicStep', s.ref);
+      if (!s.text.trim())
+        throw new ValidationError('Basic Job Step text is required before saving');
       s.performers.forEach((x) => add('performer', x.ref));
       s.supervisors.forEach((x) => add('supervisor', x.ref));
       s.tools.forEach((x) => add('tool', x.ref));

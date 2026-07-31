@@ -275,6 +275,14 @@ export interface JsaDraftHeader {
   ptwRequired: boolean;
   ptwReference?: string;
   creatorUserId: string;
+  currentVersionId?: string;
+  workingVersionId?: string;
+  workingVersionStatus?: JsaVersionStatus;
+  baseVersionId?: string;
+  checkedOutByUserId?: string;
+  checkedOutByUsername?: string;
+  checkedOutByDisplayName?: string;
+  checkedOutAt?: string;
   rowVersion: string;
   versionRowVersion: string;
 }
@@ -462,7 +470,51 @@ export type JsaVersionStatus =
   | 'RETURNED'
   | 'REJECTED'
   | 'PUBLISHED'
+  | 'SUPERSEDED'
   | 'CANCELLED';
+
+export type JsaVersioningCapability = 'update' | 'compare' | 'undoCheckout';
+export interface JsaVersioningCapabilities {
+  update: boolean;
+  compare: boolean;
+  undoCheckout: boolean;
+  configured: boolean;
+  unavailableReason?: string;
+}
+export type JsaChangeType = 'ADDED' | 'MODIFIED' | 'DELETED' | 'MOVED' | 'UNCHANGED';
+export interface JsaFieldChange {
+  field: string;
+  oldValue?: string | number | boolean | null;
+  newValue?: string | number | boolean | null;
+}
+export interface JsaVersionChange {
+  entityType: string;
+  logicalKey: string;
+  changeType: JsaChangeType;
+  label: string;
+  fields: JsaFieldChange[];
+  oldPosition?: string;
+  newPosition?: string;
+}
+export interface JsaVersionCompare {
+  jsaId: string;
+  baseVersionId: string;
+  workingVersionId: string;
+  summary: Record<JsaChangeType, number>;
+  changes: JsaVersionChange[];
+}
+export interface JsaVersionHistoryItem {
+  versionId: string;
+  versionNumber: number;
+  versionLabel?: string;
+  baseVersionId?: string;
+  status: JsaVersionStatus;
+  matrixVersionId: string;
+  createdAt: string;
+  createdBy: string;
+  publishedAt?: string;
+  publishedByUsername?: string;
+}
 export type WorkflowActionCode =
   'SUBMIT' | 'RESUBMIT' | 'APPROVE' | 'RETURN' | 'REJECT' | 'COMMENT' | 'PUBLISH';
 export interface WorkflowStepPreview {
@@ -499,6 +551,7 @@ export interface WorkflowInstanceDetail {
   instanceId: string;
   jsaId: string;
   versionId: string;
+  baseVersionId?: string;
   jsaNumber: string;
   jobTitle?: string;
   ownerSiteId: string;
@@ -538,6 +591,199 @@ export interface WorkflowNavigationCounts {
   pending: number;
   rejected: number;
   published: number;
+  favorites?: number;
+  all?: number;
+}
+
+export type JsaBrowseKind =
+  'published' | 'favorites' | 'all' | 'drafts' | 'approvals' | 'pending' | 'rejected';
+export type JsaSearchField =
+  | 'ALL'
+  | 'JSA_NUMBER'
+  | 'JOB_TITLE'
+  | 'TASK'
+  | 'HAZARD'
+  | 'CONTROL'
+  | 'PROMPT'
+  | 'CREATOR'
+  | 'APPROVER';
+export type JsaRiskStage = 'INITIAL' | 'RESIDUAL' | 'EITHER';
+export interface JsaBrowseItem {
+  jsaId: string;
+  versionId: string;
+  jsaNumber: string;
+  jobTitle?: string;
+  ownerSiteId: string;
+  ownerSiteCode: string;
+  ownerSiteName: string;
+  rigId: string;
+  rigCode: string;
+  rigName: string;
+  departmentId: string;
+  departmentCode: string;
+  departmentName: string;
+  currentStatus?: JsaVersionStatus;
+  workingStatus?: JsaVersionStatus;
+  displayStatus: JsaVersionStatus;
+  matrixVersionId: string;
+  creatorUsername: string;
+  publishedByUsername?: string;
+  currentStepName?: string;
+  createdAt: string;
+  publishedAt?: string;
+  updatedAt: string;
+  favorite: boolean;
+  publishedTranslationCount: number;
+  matchedFields: JsaSearchField[];
+  matchedVersionKinds: Array<'CURRENT' | 'WORKING'>;
+}
+export interface JsaBrowseResult {
+  items: JsaBrowseItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+export interface JsaBrowseFacets {
+  sites: Array<{ id: string; code: string; name: string }>;
+  departments: Array<{ id: string; code: string; name: string }>;
+  matrixVersions: Array<{ id: string; code: string; name: string }>;
+}
+export interface JsaBrowseCapabilities {
+  view: boolean;
+  favorite: boolean;
+  favoriteConfigured: boolean;
+  unavailableReason?: string;
+}
+
+export type JsaRiskCopyMode = 'PRESERVED' | 'CLEARED';
+export type JsaCopyMappingStatus = 'MAPPED' | 'MISSING' | 'AMBIGUOUS';
+export interface JsaCopyIssue {
+  code: string;
+  message: string;
+  context?: Record<string, string | number | boolean>;
+}
+export interface JsaCopyOrganizationSummary {
+  siteId: string;
+  siteCode: string;
+  siteName: string;
+  rigId: string;
+  rigCode: string;
+  rigName: string;
+  departmentId: string;
+  departmentCode: string;
+  departmentName: string;
+}
+export interface JsaCopyMatrixSummary {
+  id: string;
+  code: string;
+  name: string;
+  versionCode: string;
+  dimension: number;
+}
+export interface JsaCopySourceSummary extends JsaCopyOrganizationSummary {
+  jsaId: string;
+  versionId: string;
+  jsaNumber: string;
+  jobTitle?: string;
+  versionNumber: number;
+  versionLabel?: string;
+}
+export interface JsaCopyReferenceMapping {
+  sourceCode: string;
+  sourceName: string;
+  status: JsaCopyMappingStatus;
+  occurrenceCount: number;
+  destinationId?: string;
+  destinationCode?: string;
+  destinationName?: string;
+}
+export interface JsaCopyContentCounts {
+  prompts: number;
+  tasks: number;
+  hazards: number;
+  controls: number;
+  basicSteps: number;
+  performers: number;
+  supervisors: number;
+  tools: number;
+}
+export interface JsaCopyPreflight {
+  source: JsaCopySourceSummary;
+  destination: JsaCopyOrganizationSummary;
+  sourceMatrix?: JsaCopyMatrixSummary;
+  destinationMatrix?: JsaCopyMatrixSummary;
+  riskCopyMode: JsaRiskCopyMode;
+  matrixReassessmentRequired: boolean;
+  counts: JsaCopyContentCounts;
+  promptMappings: JsaCopyReferenceMapping[];
+  performerMappings: JsaCopyReferenceMapping[];
+  supervisorMappings: JsaCopyReferenceMapping[];
+  toolMappings: JsaCopyReferenceMapping[];
+  excludedAttachments: { count: number; names: string[] };
+  intentionallyNotCopied: string[];
+  blockers: JsaCopyIssue[];
+  warnings: JsaCopyIssue[];
+  canCopy: boolean;
+}
+export interface JsaCopyDestinationOptions {
+  localSite: { id: string; code: string; name: string };
+  rigs: Array<{ id: string; code: string; name: string; siteId: string }>;
+  departments: Array<{
+    id: string;
+    code: string;
+    name: string;
+    siteId: string;
+    rigId: string;
+  }>;
+}
+export interface JsaCopyCapabilities {
+  view: boolean;
+  create: boolean;
+  copy: boolean;
+  configured: boolean;
+  unavailableReason?: string;
+}
+export interface JsaCopyResult {
+  destinationJsaId: string;
+  destinationWorkingVersionId: string;
+  temporaryJsaNumber: string;
+  destination: JsaCopyOrganizationSummary;
+  sourceJsaId: string;
+  sourceVersionId: string;
+  sourceJsaNumber: string;
+  sourceMatrix: JsaCopyMatrixSummary;
+  destinationMatrix: JsaCopyMatrixSummary;
+  riskCopyMode: JsaRiskCopyMode;
+  matrixReassessmentRequired: boolean;
+  excludedAttachmentCount: number;
+  promptWarningCount: number;
+  masterRowVersion: string;
+  versionRowVersion: string;
+  route: string;
+  idempotentReplay: boolean;
+}
+export interface JsaCopyProvenance {
+  destinationJsaId: string;
+  destinationVersionId: string;
+  sourceJsaId: string;
+  sourceVersionId: string;
+  sourceJsaNumber: string;
+  sourceSiteId: string;
+  sourceSiteCode: string;
+  sourceSiteName: string;
+  sourceRigId: string;
+  sourceRigCode: string;
+  sourceRigName: string;
+  sourceVersionNumber: number;
+  sourceVersionLabel?: string;
+  copiedByUserId: string;
+  copiedByUsername: string;
+  copiedByDisplayName?: string;
+  copiedAt: string;
+  copyReason: string;
+  riskCopyMode: JsaRiskCopyMode;
+  matrixReassessmentRequired: boolean;
+  excludedAttachmentCount: number;
 }
 export interface WorkflowDefinitionSummary {
   id: string;
@@ -573,4 +819,107 @@ export interface NotificationItem {
   targetId: string;
   read: boolean;
   createdAt: string;
+}
+
+export type TranslationStatus =
+  'ASSIGNED' | 'IN_TRANSLATION' | 'STC_REVIEW' | 'RETURNED' | 'PUBLISHED' | 'OUTDATED';
+
+export interface TranslationCapabilities {
+  view: boolean;
+  assign: boolean;
+  translate: boolean;
+  approve: boolean;
+  print: boolean;
+  configured: boolean;
+  unavailableReason?: string;
+}
+
+export interface TranslationCandidate {
+  userId: string;
+  username: string;
+  displayName: string;
+}
+
+export interface TranslationSegment {
+  id: string;
+  entityType: string;
+  sourceEntityId: string;
+  sourceLogicalKey: string;
+  fieldCode: string;
+  sectionCode: string;
+  displayOrder: number;
+  required: boolean;
+  sourceText: string;
+  sourceTextHash: string;
+  translatedText?: string;
+  rowVersion: string;
+}
+
+export interface TranslationListItem {
+  translationId: string;
+  jsaId: string;
+  sourceVersionId: string;
+  jsaNumber: string;
+  jobTitle?: string;
+  targetLanguageId: string;
+  targetLanguageCode: string;
+  targetLanguageName: string;
+  status: TranslationStatus;
+  cycleNumber: number;
+  translatorUserId: string;
+  translatorDisplayName: string;
+  stcReviewerUserId?: string;
+  stcReviewerDisplayName?: string;
+  sourceVersionNumber: number;
+  sourceVersionLabel?: string;
+  replacementVersionId?: string;
+  assignedAt: string;
+  submittedAt?: string;
+  publishedAt?: string;
+  outdatedAt?: string;
+  updatedAt: string;
+  rowVersion: string;
+}
+
+export interface PublishedTranslationOption {
+  translationId: string;
+  targetLanguageCode: string;
+  targetLanguageName: string;
+  sourceVersionNumber: number;
+  sourceVersionLabel?: string;
+  publishedAt: string;
+}
+
+export type TranslationListResult = PaginatedResponse<TranslationListItem>;
+
+export interface TranslationAction {
+  id: string;
+  action: string;
+  actorUserId: string;
+  actorUsername: string;
+  actorDisplayName: string;
+  fromStatus?: TranslationStatus;
+  toStatus?: TranslationStatus;
+  comment?: string;
+  cycleNumber: number;
+  actionAt: string;
+}
+
+export interface TranslationDetail extends TranslationListItem {
+  ownerSiteId: string;
+  rigId: string;
+  departmentId: string;
+  sourceLanguageCode: string;
+  sourceContentHash: string;
+  translatedContentHash?: string;
+  editable: boolean;
+  reviewable: boolean;
+  printable: boolean;
+  segments: TranslationSegment[];
+  actions: TranslationAction[];
+}
+
+export interface TranslationNavigationCounts {
+  translationTasks: number;
+  translationReviews: number;
 }

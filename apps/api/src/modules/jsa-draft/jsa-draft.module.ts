@@ -19,5 +19,6 @@ import { JsaDraftController } from './jsa-draft.controller';
     OracleJsaDraftRepository,
     { provide: JSA_DRAFT_REPOSITORY, useExisting: OracleJsaDraftRepository },
   ],
+  exports: [JsaNumberService],
 })
 export class JsaDraftModule {}

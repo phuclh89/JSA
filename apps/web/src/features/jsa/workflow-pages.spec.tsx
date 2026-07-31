@@ -8,14 +8,17 @@ vi.mock('./jsa-draft-editor', () => ({
   JsaDraftEditor: ({
     embedded,
     forceReadOnly,
+    reviewComparison,
   }: {
     embedded?: boolean;
     forceReadOnly?: boolean;
+    reviewComparison?: boolean;
   }) => (
     <div
       aria-label="Complete JSA worksheet"
       data-embedded={String(embedded)}
       data-read-only={String(forceReadOnly)}
+      data-review-comparison={String(reviewComparison)}
     >
       Embedded JSA worksheet
     </div>
@@ -59,6 +62,7 @@ vi.mock('./workflow-api', () => ({
       currentTaskId: '20',
       currentAssigneeUserId: '9',
       currentStepName: 'STC',
+      baseVersionId: '9',
       actions: [
         {
           id: '30',
@@ -122,6 +126,26 @@ vi.mock('./jsa-api', () => ({
     })),
   },
 }));
+vi.mock('./versioning-api', () => ({
+  versioningApi: {
+    capabilities: vi.fn(async () => ({
+      configured: true,
+      update: true,
+      compare: true,
+      undoCheckout: true,
+    })),
+    checkout: vi.fn(),
+    history: vi.fn(),
+    compare: vi.fn(),
+    reviewCompare: vi.fn(async () => ({
+      jsaId: '10',
+      baseVersionId: '9',
+      workingVersionId: '11',
+      summary: { ADDED: 1, MODIFIED: 1, DELETED: 1, MOVED: 0, UNCHANGED: 0 },
+      changes: [],
+    })),
+  },
+}));
 vi.mock('./rig-context', () => ({
   useRigContext: () => ({ selectedRigId: undefined }),
 }));
@@ -145,7 +169,7 @@ describe('Phase 4 workflow pages', () => {
     expect(await screen.findByRole('heading', { name: 'Published JSA' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Published JSA operations' })).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'JSA folders' })).not.toBeInTheDocument();
-    expect(screen.getByText('JSA-10')).toBeInTheDocument();
+    expect(await screen.findByText('JSA-10')).toBeInTheDocument();
     expect(screen.getByText('Development Rig')).toBeInTheDocument();
     expect(screen.getByText('Drilling')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Print JSA' })).toBeDisabled();
@@ -169,6 +193,16 @@ describe('Phase 4 workflow pages', () => {
       'data-read-only',
       'true',
     );
+    expect(screen.getByLabelText('Complete JSA worksheet')).toHaveAttribute(
+      'data-review-comparison',
+      'true',
+    );
+    const history = screen.getByLabelText('Approval history');
+    const changesFromBase = screen.getByText('Changes from Base');
+    expect(
+      history.compareDocumentPosition(changesFromBase) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Expand' })).toBeInTheDocument();
     expect(screen.getByLabelText('JSA approval status')).toBeInTheDocument();
     expect(screen.getAllByText('Department Head').length).toBeGreaterThan(0);
     expect(screen.getAllByText('STC').length).toBeGreaterThan(0);

@@ -1,0 +1,84 @@
+.version-compare {
+  min-width: 0;
+  box-shadow: var(--color-border) 0 0 0 1px;
+}
+.version-compare--collapsed .ant-card-body {
+  display: none;
+}
+.version-compare-summary,
+.version-compare-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.version-compare-filters label {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+}
+.version-compare-filters .ant-select {
+  min-width: 170px;
+}
+.version-change-list {
+  display: grid;
+  gap: 12px;
+}
+.version-change {
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-left-width: 4px;
+  border-radius: var(--radius-input);
+  overflow-wrap: anywhere;
+}
+.version-change--added {
+  border-left-color: var(--color-success);
+}
+.version-change--modified,
+.version-change--moved {
+  border-left-color: var(--color-warning);
+}
+.version-change--deleted {
+  border-left-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface));
+}
+.version-change dl {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr);
+  gap: 8px;
+  margin: 10px 0 0;
+}
+.version-change dt {
+  font-weight: 600;
+}
+.version-change dd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+.version-value-old,
+.version-value-new {
+  padding: 8px;
+  background: var(--color-page-surface);
+  white-space: pre-wrap;
+}
+.version-value-label {
+  display: block;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+@media (max-width: 767px) {
+  .version-change dl,
+  .version-change dd {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .version-compare * {
+    transition: none !important;
+  }
+}

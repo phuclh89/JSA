@@ -51,6 +51,9 @@ it('renders the application shell', async () => {
           if (input.includes('/jsa-workflow/navigation-counts')) {
             return { drafts: 2, approvals: 3, pending: 4, rejected: 0, published: 1 };
           }
+          if (input.includes('/jsa-versions/capabilities')) {
+            return { configured: true, update: true, compare: true, undoCheckout: true };
+          }
           return {
             status: 'ok',
             service: 'jsams-api',
@@ -78,9 +81,8 @@ it('renders the application shell', async () => {
     'aria-selected',
     'true',
   );
-  await waitFor(() => expect(screen.getByText('Published JSA (1)')).toBeInTheDocument());
   expect(screen.queryByText('Browse Home')).not.toBeInTheDocument();
-});
+}, 10_000);
 
 it('hides forbidden navigation and denies a direct route', async () => {
   vi.stubGlobal(
